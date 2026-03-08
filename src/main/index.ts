@@ -1,16 +1,19 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, Menu } from "electron";
 import { join } from "path";
 import { registerIpcHandlers } from "./ipc-handlers";
 
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow(): void {
+  Menu.setApplicationMenu(null);
+
   mainWindow = new BrowserWindow({
     width: 800,
     height: 600,
     minWidth: 600,
     minHeight: 400,
     title: "AnyBoot",
+    autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, "..", "preload.js"),
       contextIsolation: true,

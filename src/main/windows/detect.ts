@@ -8,8 +8,11 @@ interface PSDisk {
   Number: number;
   FriendlyName: string;
   Size: number;
-  BusType: string;
+  BusType: number | string;
+  MediaType: string;
   PartitionStyle: string;
+  IsSystem: boolean;
+  IsBoot: boolean;
 }
 
 interface PSPartition {
@@ -20,33 +23,41 @@ interface PSPartition {
   Type: string;
 }
 
-interface PSVolume {
-  DriveLetter: string | null;
-  FileSystemLabel: string;
-  FileSystem: string;
-  Size: number;
-  ObjectId: string;
-}
+// BusType values: https://learn.microsoft.com/en-us/previous-versions/windows/desktop/stormgmt/msft-disk
+// 7 = USB, but Get-Disk may also return the string "USB"
+const USB_BUS_TYPES = [7, "7", "USB"];
 
 export async function listUsbDevicesWindows(): Promise<UsbDevice[]> {
-  // Get USB disks
+  // Get all removable disks - filter by BusType USB or by being removable
+  // Use a broader filter to catch USB drives that report different BusTypes
   const { stdout: diskJson } = await execFileAsync("powershell", [
     "-NoProfile",
     "-Command",
-    `Get-Disk | Where-Object { $_.BusType -eq 'USB' } | ` +
-      `Select-Object Number,FriendlyName,Size,BusType,PartitionStyle | ` +
+    [
+      `Get-Disk |`,
+      `Where-Object { $_.BusType -eq 'USB' -or $_.BusType -eq 7 -or`,
+      `($_.Size -gt 0 -and -not $_.IsSystem -and -not $_.IsBoot -and $_.BusType -ne 'SATA' -and $_.BusType -ne 'NVMe' -and $_.BusType -ne 'RAID') } |`,
+      `Select-Object Number,FriendlyName,Size,BusType,MediaType,PartitionStyle,IsSystem,IsBoot |`,
       `ConvertTo-Json -Compress`,
+    ].join(" "),
   ]);
 
   if (!diskJson.trim() || diskJson.trim() === "") return [];
 
-  const parsed = JSON.parse(diskJson);
-  const disks: PSDisk[] = Array.isArray(parsed) ? parsed : [parsed];
+  let parsed: any;
+  try {
+    parsed = JSON.parse(diskJson);
+  } catch {
+    return [];
+  }
 
+  const disks: PSDisk[] = Array.isArray(parsed) ? parsed : [parsed];
   const devices: UsbDevice[] = [];
 
   for (const disk of disks) {
     if (!disk) continue;
+    // Skip system and boot disks
+    if (disk.IsSystem || disk.IsBoot) continue;
 
     // Get partitions for this disk
     let partitions: Partition[] = [];
@@ -54,7 +65,7 @@ export async function listUsbDevicesWindows(): Promise<UsbDevice[]> {
       const { stdout: partJson } = await execFileAsync("powershell", [
         "-NoProfile",
         "-Command",
-        `Get-Partition -DiskNumber ${disk.Number} | ` +
+        `Get-Partition -DiskNumber ${disk.Number} -ErrorAction SilentlyContinue | ` +
           `Select-Object DiskNumber,PartitionNumber,DriveLetter,Size,Type | ` +
           `ConvertTo-Json -Compress`,
       ]);
@@ -76,14 +87,16 @@ export async function listUsbDevicesWindows(): Promise<UsbDevice[]> {
           }));
       }
     } catch {
-      // Disk may have no partitions
+      // Disk may have no partitions (uninitialized)
     }
+
+    const busLabel = USB_BUS_TYPES.includes(disk.BusType) ? "" : ` [${disk.BusType}]`;
 
     devices.push({
       name: `disk${disk.Number}`,
       path: `\\\\.\\PhysicalDrive${disk.Number}`,
       size: formatSize(disk.Size),
-      model: disk.FriendlyName || "Unknown USB Device",
+      model: (disk.FriendlyName || "Unknown USB Device") + busLabel,
       label: "",
       partitions,
     });
@@ -93,6 +106,7 @@ export async function listUsbDevicesWindows(): Promise<UsbDevice[]> {
 }
 
 function formatSize(bytes: number): string {
+  if (!bytes || bytes <= 0) return "0B";
   if (bytes < 1024 * 1024 * 1024) {
     return `${(bytes / (1024 * 1024)).toFixed(0)}M`;
   }
