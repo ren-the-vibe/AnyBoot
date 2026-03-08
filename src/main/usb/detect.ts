@@ -18,7 +18,7 @@ interface LsblkOutput {
 }
 
 /**
- * List USB devices on Linux using lsblk.
+ * List all disk devices on Linux using lsblk.
  */
 export async function listUsbDevices(): Promise<UsbDevice[]> {
   const { stdout } = await runCommand("lsblk", [
@@ -28,11 +28,10 @@ export async function listUsbDevices(): Promise<UsbDevice[]> {
   ]);
 
   const data: LsblkOutput = JSON.parse(stdout);
-  const usbDevices: UsbDevice[] = [];
+  const devices: UsbDevice[] = [];
 
   for (const dev of data.blockdevices) {
     if (dev.type !== "disk") continue;
-    if (dev.tran !== "usb") continue;
 
     const partitions: Partition[] = (dev.children || []).map((child) => ({
       name: child.name,
@@ -43,15 +42,16 @@ export async function listUsbDevices(): Promise<UsbDevice[]> {
       fstype: child.fstype,
     }));
 
-    usbDevices.push({
+    const transport = dev.tran ? ` [${dev.tran}]` : "";
+    devices.push({
       name: dev.name,
       path: `/dev/${dev.name}`,
       size: dev.size,
-      model: dev.model?.trim() || "Unknown USB Device",
+      model: (dev.model?.trim() || "Unknown Device") + transport,
       label: dev.label || "",
       partitions,
     });
   }
 
-  return usbDevices;
+  return devices;
 }
