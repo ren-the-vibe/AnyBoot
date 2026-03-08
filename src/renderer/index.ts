@@ -7,6 +7,8 @@ interface AnyBootAPI {
   listIsos: (devicePath: string) => Promise<any[]>;
   checkDependencies: () => Promise<any[]>;
   selectIsoFile: () => Promise<string | null>;
+  attachDiskWsl: (physicalDriveId: string) => Promise<{ success: boolean; wslPath?: string; error?: string }>;
+  detachDiskWsl: (physicalDriveId: string) => Promise<{ success: boolean; error?: string }>;
   onProgress: (callback: (event: any, data: any) => void) => () => void;
 }
 
@@ -83,7 +85,7 @@ async function refreshDevices(): Promise<void> {
   onDeviceSelected();
 }
 
-function onDeviceSelected(): void {
+async function onDeviceSelected(): Promise<void> {
   selectedDevice = deviceSelect.value;
   const hasDevice = selectedDevice !== "";
 
@@ -91,9 +93,15 @@ function onDeviceSelected(): void {
   addIsoBtn.disabled = !hasDevice || isOperationRunning;
 
   if (hasDevice) {
-    deviceInfo.textContent = `Selected: ${selectedDevice}`;
-    deviceInfo.classList.remove("hidden");
-    refreshIsoList();
+    // Check if this is a Windows physical drive that needs WSL attachment
+    if (selectedDevice.startsWith("\\\\.\\PHYSICALDRIVE")) {
+      deviceInfo.textContent = `Selected: ${selectedDevice} - Needs WSL attachment. Click "Prepare Drive" to attach and format.`;
+      deviceInfo.classList.remove("hidden");
+    } else {
+      deviceInfo.textContent = `Selected: ${selectedDevice}`;
+      deviceInfo.classList.remove("hidden");
+      refreshIsoList();
+    }
   } else {
     deviceInfo.classList.add("hidden");
   }
@@ -113,7 +121,29 @@ async function prepareDrive(): Promise<void> {
   setOperationRunning(true);
   showProgress("Starting drive preparation...", 0);
 
-  const result = await anyboot.prepareDevice(selectedDevice);
+  // If this is a Windows physical drive, attach it to WSL first
+  let deviceToUse = selectedDevice;
+  if (selectedDevice.startsWith("\\\\.\\PHYSICALDRIVE")) {
+    showProgress("Attaching disk to WSL...", 5);
+    const attachResult = await anyboot.attachDiskWsl(selectedDevice);
+    if (!attachResult.success || !attachResult.wslPath) {
+      hideProgress();
+      statusText.textContent = `Error: ${attachResult.error}`;
+      alert(
+        `Failed to attach disk to WSL:\n${attachResult.error}\n\n` +
+        `Make sure:\n` +
+        `- You are running as Administrator\n` +
+        `- WSL2 is installed and running\n` +
+        `- The disk is not in use by Windows`
+      );
+      setOperationRunning(false);
+      return;
+    }
+    deviceToUse = attachResult.wslPath;
+    statusText.textContent = `Disk attached to WSL as ${deviceToUse}`;
+  }
+
+  const result = await anyboot.prepareDevice(deviceToUse);
 
   if (result.success) {
     hideProgress();

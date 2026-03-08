@@ -1,35 +1,38 @@
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { mkdtemp, rmdir } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-
-const execFileAsync = promisify(execFile);
+import { runCommand } from "../utils/command-runner";
+import { isWindows } from "../utils/platform";
 
 export async function mountPartition(
   device: string,
   mountpoint?: string
 ): Promise<string> {
   const target =
-    mountpoint || (await mkdtemp(join(tmpdir(), "anyboot-mount-")));
+    mountpoint || (await createTempMountpoint("mount"));
 
-  await execFileAsync("pkexec", ["mount", device, target]);
+  if (isWindows()) {
+    // In WSL, create mountpoint inside WSL's filesystem and mount there
+    await runCommand("mkdir", ["-p", target], { asRoot: true });
+  }
+
+  await runCommand("mount", [device, target], { asRoot: true });
   return target;
 }
 
 export async function unmountPartition(mountpoint: string): Promise<void> {
   try {
-    await execFileAsync("pkexec", ["umount", mountpoint]);
+    await runCommand("umount", [mountpoint], { asRoot: true });
   } catch {
     // Try lazy unmount if regular unmount fails
-    await execFileAsync("pkexec", ["umount", "-l", mountpoint]);
+    await runCommand("umount", ["-l", mountpoint], { asRoot: true });
   }
 }
 
 export async function unmountAllPartitions(
   devicePath: string
 ): Promise<void> {
-  const { stdout } = await execFileAsync("lsblk", [
+  const { stdout } = await runCommand("lsblk", [
     "-J",
     "-o",
     "NAME,MOUNTPOINT",
@@ -51,12 +54,24 @@ export async function unmountAllPartitions(
 }
 
 export async function createTempMountpoint(prefix: string): Promise<string> {
+  if (isWindows()) {
+    // Create temp dir inside WSL filesystem
+    const { stdout } = await runCommand("mktemp", [
+      "-d",
+      `/tmp/anyboot-${prefix}-XXXXXX`,
+    ]);
+    return stdout.trim();
+  }
   return mkdtemp(join(tmpdir(), `anyboot-${prefix}-`));
 }
 
 export async function removeMountpoint(mountpoint: string): Promise<void> {
   try {
-    await rmdir(mountpoint);
+    if (isWindows()) {
+      await runCommand("rmdir", [mountpoint], { asRoot: true });
+    } else {
+      await rmdir(mountpoint);
+    }
   } catch {
     // Ignore if directory is not empty or doesn't exist
   }

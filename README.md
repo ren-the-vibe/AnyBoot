@@ -9,6 +9,7 @@ A tool to create a multiboot USB drive. When booted, the USB shows a GRUB2 menu 
 - **Dynamic ISO detection** - GRUB2 automatically scans for ISO files at boot time
 - **Distro-aware** - Supports Ubuntu, Debian, Fedora, Arch, openSUSE, and more
 - **Electron GUI** - Simple graphical interface for drive preparation and ISO management
+- **Windows support** - Runs on Windows via WSL (Windows Subsystem for Linux)
 
 ## Requirements
 
@@ -37,6 +38,20 @@ sudo dnf install gdisk dosfstools grub2-tools grub2-pc-modules grub2-efi-x64-mod
 ```bash
 sudo pacman -S gptfdisk dosfstools grub parted
 ```
+
+### Running on Windows (via WSL)
+
+AnyBoot can run on Windows by delegating system operations to WSL. You need:
+
+1. **WSL2** installed and running (`wsl --install` in an admin PowerShell)
+2. **Required tools installed inside WSL** (see Ubuntu/Debian instructions above)
+3. **Run AnyBoot as Administrator** (needed for `wsl --mount` to attach USB disks)
+
+When running on Windows, AnyBoot will:
+- Detect USB drives via PowerShell
+- Attach the selected drive to WSL using `wsl --mount --bare`
+- Run all partitioning, formatting, and GRUB installation inside WSL
+- Translate file paths between Windows and WSL automatically
 
 ## Build & Run
 

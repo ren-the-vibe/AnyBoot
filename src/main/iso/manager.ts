@@ -1,6 +1,4 @@
-import { execFile, spawn } from "child_process";
-import { promisify } from "util";
-import { stat, readdir, unlink } from "fs/promises";
+import { stat, readdir } from "fs/promises";
 import { join, basename } from "path";
 import { partitionPath } from "../usb/format";
 import {
@@ -11,8 +9,8 @@ import {
 } from "../usb/mount";
 import { probeIsoByFilename } from "./probe";
 import { IsoFile } from "../../shared/types";
-
-const execFileAsync = promisify(execFile);
+import { runCommand, spawnCommand, translatePath } from "../utils/command-runner";
+import { isWindows } from "../utils/platform";
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -41,9 +39,12 @@ export async function addIso(
 
     onProgress?.(0, `Copying ${basename(isoPath)}...`);
 
-    // Use cp with pkexec for privileged copy
+    // Translate the ISO source path for WSL if on Windows
+    const srcPath = translatePath(isoPath);
+
+    // Use cp with privilege escalation
     await new Promise<void>((resolve, reject) => {
-      const proc = spawn("pkexec", ["cp", "--", isoPath, destPath]);
+      const proc = spawnCommand("cp", ["--", srcPath, destPath], true);
 
       proc.on("close", (code) => {
         if (code === 0) {
@@ -57,14 +58,31 @@ export async function addIso(
       proc.on("error", reject);
 
       // Poll file size for progress
+      // On Windows, we poll via WSL stat; on Linux, use native stat
       const interval = setInterval(async () => {
         try {
-          const destStat = await stat(destPath);
-          const percent = Math.min(
-            99,
-            Math.round((destStat.size / totalBytes) * 100)
-          );
-          onProgress?.(percent, `Copying ${basename(isoPath)}...`);
+          if (isWindows()) {
+            const { stdout } = await runCommand("stat", [
+              "-c",
+              "%s",
+              destPath,
+            ]);
+            const currentBytes = parseInt(stdout.trim(), 10);
+            if (!isNaN(currentBytes)) {
+              const percent = Math.min(
+                99,
+                Math.round((currentBytes / totalBytes) * 100)
+              );
+              onProgress?.(percent, `Copying ${basename(isoPath)}...`);
+            }
+          } else {
+            const destStat = await stat(destPath);
+            const percent = Math.min(
+              99,
+              Math.round((destStat.size / totalBytes) * 100)
+            );
+            onProgress?.(percent, `Copying ${basename(isoPath)}...`);
+          }
         } catch {
           // File may not exist yet
         }
@@ -90,7 +108,7 @@ export async function removeIso(
   try {
     await mountPartition(dataDevice, dataMount);
     const isoPath = join(dataMount, "iso", isoName);
-    await execFileAsync("pkexec", ["rm", "--", isoPath]);
+    await runCommand("rm", ["--", isoPath], { asRoot: true });
   } finally {
     try {
       await unmountPartition(dataMount);
@@ -109,7 +127,13 @@ export async function listIsos(devicePath: string): Promise<IsoFile[]> {
 
     let files: string[];
     try {
-      files = await readdir(isoDir);
+      if (isWindows()) {
+        // Use WSL ls to read directory contents
+        const { stdout } = await runCommand("ls", [isoDir]);
+        files = stdout.trim().split("\n").filter(Boolean);
+      } else {
+        files = await readdir(isoDir);
+      }
     } catch {
       return [];
     }
@@ -118,13 +142,27 @@ export async function listIsos(devicePath: string): Promise<IsoFile[]> {
     for (const file of files) {
       if (!file.toLowerCase().endsWith(".iso")) continue;
 
-      const filePath = join(isoDir, file);
-      const fileStat = await stat(filePath);
+      let fileSize = 0;
+      try {
+        if (isWindows()) {
+          const { stdout } = await runCommand("stat", [
+            "-c",
+            "%s",
+            join(isoDir, file),
+          ]);
+          fileSize = parseInt(stdout.trim(), 10);
+        } else {
+          const fileStat = await stat(join(isoDir, file));
+          fileSize = fileStat.size;
+        }
+      } catch {
+        continue;
+      }
 
       isoFiles.push({
         name: file,
-        size: fileStat.size,
-        sizeHuman: formatSize(fileStat.size),
+        size: fileSize,
+        sizeHuman: formatSize(fileSize),
         distroFamily: probeIsoByFilename(file),
       });
     }

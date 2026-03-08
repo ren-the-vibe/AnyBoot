@@ -1,7 +1,4 @@
-import { execFile } from "child_process";
-import { promisify } from "util";
-
-const execFileAsync = promisify(execFile);
+import { runCommand } from "../utils/command-runner";
 
 function partitionPath(devicePath: string, partNum: number): string {
   // Handle /dev/sdX vs /dev/nvmeXnYpZ naming
@@ -17,24 +14,14 @@ export async function formatDrive(devicePath: string): Promise<void> {
   const data = partitionPath(devicePath, 3);
 
   // Format EFI System Partition as FAT32
-  await execFileAsync("pkexec", [
-    "mkfs.fat",
-    "-F",
-    "32",
-    "-n",
-    "EFI",
-    esp,
-  ]);
+  await runCommand("mkfs.fat", ["-F", "32", "-n", "EFI", esp], {
+    asRoot: true,
+  });
 
   // Format Data Partition as FAT32
-  await execFileAsync("pkexec", [
-    "mkfs.fat",
-    "-F",
-    "32",
-    "-n",
-    "ANYBOOT",
-    data,
-  ]);
+  await runCommand("mkfs.fat", ["-F", "32", "-n", "ANYBOOT", data], {
+    asRoot: true,
+  });
 }
 
 export { partitionPath };
