@@ -63,13 +63,19 @@ async function refreshDevices(): Promise<void> {
   try {
     result = await anyboot.listDevices();
   } catch (err: any) {
-    statusText.textContent = `Error scanning devices: ${err.message || err}`;
+    depBanner.className = "banner error";
+    depMessage.textContent = `Error scanning devices: ${err.message || err}`;
+    depBanner.classList.remove("hidden");
+    statusText.textContent = "Device scan failed.";
     return;
   }
 
   // Check if backend returned an error object
   if (result && result.error) {
-    statusText.textContent = `Error: ${result.error}`;
+    depBanner.className = "banner error";
+    depMessage.textContent = `Error scanning devices: ${result.error}`;
+    depBanner.classList.remove("hidden");
+    statusText.textContent = "Device scan failed.";
     return;
   }
 
