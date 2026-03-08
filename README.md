@@ -67,11 +67,23 @@ npm run build-grub
 
 **On Windows (via WSL):**
 
-```powershell
-# Install GRUB packages in WSL first
-wsl sudo apt install grub-pc-bin grub-efi-amd64-bin grub-common
+The build script requires a Debian/Ubuntu-based WSL distro. If your default WSL distro is Alpine or another non-Debian distro, install Ubuntu from the Microsoft Store first:
 
-# Build the binaries (automatically uses WSL)
+```powershell
+# Install Ubuntu WSL if you don't have it
+wsl --install -d Ubuntu
+
+# Install GRUB packages in WSL (Ubuntu)
+wsl -d Ubuntu sudo apt install grub-pc-bin grub-efi-amd64-bin grub-common
+
+# Build the binaries using Ubuntu WSL
+wsl -d Ubuntu bash scripts/build-grub-binaries.sh
+```
+
+If Ubuntu is already your default WSL distro:
+
+```powershell
+wsl sudo apt install grub-pc-bin grub-efi-amd64-bin grub-common
 npm run build-grub
 ```
 
