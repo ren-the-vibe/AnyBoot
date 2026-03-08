@@ -4,7 +4,7 @@
   "description": "A tool to create a multiboot USB drive",
   "main": "dist/main/index.js",
   "scripts": {
-    "copy-assets": "cp src/renderer/index.html dist/renderer/index.html && cp src/renderer/styles.css dist/renderer/styles.css",
+    "copy-assets": "node scripts/copy-assets.js",
     "build": "tsc && npm run copy-assets",
     "start": "npm run build && electron .",
     "dev": "tsc && npm run copy-assets && electron .",
