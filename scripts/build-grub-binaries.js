@@ -17,12 +17,13 @@ const scriptDir = __dirname;
 const bashScript = path.join(scriptDir, "build-grub-binaries.sh");
 
 /**
- * Find a Debian/Ubuntu-based WSL distro that has apt available.
- * Returns the distro name to pass to `wsl -d`, or null to use the default.
+ * Get a ranked list of WSL distro candidates to try.
+ * Debian/Ubuntu-based distros with apt come first, then the rest.
+ * Each entry is a distro name (string), or null for the default distro.
  */
-function findDebianWslDistro() {
-  // Preferred distro names (case-insensitive match)
+function getWslCandidates() {
   const preferred = ["ubuntu", "debian"];
+  const candidates = [];
 
   try {
     const raw = execSync("wsl --list --quiet", { encoding: "utf-8" });
@@ -33,34 +34,43 @@ function findDebianWslDistro() {
       .map((l) => l.trim())
       .filter(Boolean);
 
-    // First pass: look for a known Debian-based name
+    // Add preferred distros first (by name match)
     for (const pref of preferred) {
-      const match = distros.find((d) => d.toLowerCase().includes(pref));
-      if (match) return match;
+      for (const d of distros) {
+        if (d.toLowerCase().includes(pref) && !candidates.includes(d)) {
+          candidates.push(d);
+        }
+      }
     }
 
-    // Second pass: test if default distro has apt
-    try {
-      execSync("wsl -- which apt", { stdio: "ignore" });
-      return null; // default distro has apt, use it
-    } catch {
-      // default doesn't have apt
+    // Add remaining distros that have apt
+    for (const d of distros) {
+      if (!candidates.includes(d)) {
+        try {
+          execSync(`wsl -d ${d} -- which apt`, { stdio: "ignore" });
+          candidates.push(d);
+        } catch {
+          // no apt, add at the end as a last resort
+        }
+      }
     }
 
-    // Third pass: test each distro for apt
-    for (const distro of distros) {
-      try {
-        execSync(`wsl -d ${distro} -- which apt`, { stdio: "ignore" });
-        return distro;
-      } catch {
-        // no apt in this distro
+    // Add any remaining distros we haven't tried (low priority)
+    for (const d of distros) {
+      if (!candidates.includes(d)) {
+        candidates.push(d);
       }
     }
   } catch {
-    // wsl --list failed
+    // wsl --list failed; fall back to default
+    candidates.push(null);
   }
 
-  return null;
+  if (candidates.length === 0) {
+    candidates.push(null);
+  }
+
+  return candidates;
 }
 
 if (os.platform() === "win32") {
@@ -75,20 +85,33 @@ if (os.platform() === "win32") {
     wslPath = bashScript.replace(/\\/g, "/");
   }
 
-  const distro = findDebianWslDistro();
-  const wslArgs = distro
-    ? ["-d", distro, "bash", wslPath]
-    : ["bash", wslPath];
-  const distroLabel = distro || "default";
+  const candidates = getWslCandidates();
+  let success = false;
 
-  console.log(`Running GRUB binary build via WSL (distro: ${distroLabel})...`);
-  console.log(`WSL path: ${wslPath}`);
-  console.log("");
+  for (const distro of candidates) {
+    const wslArgs = distro
+      ? ["-d", distro, "bash", wslPath]
+      : ["bash", wslPath];
+    const distroLabel = distro || "default";
 
-  try {
-    execFileSync("wsl", wslArgs, { stdio: "inherit" });
-  } catch (err) {
-    console.error("\nFailed to build GRUB binaries via WSL.");
+    console.log(`Trying WSL distro: ${distroLabel}...`);
+    console.log(`WSL path: ${wslPath}`);
+    console.log("");
+
+    try {
+      execFileSync("wsl", wslArgs, { stdio: "inherit" });
+      success = true;
+      break;
+    } catch (err) {
+      console.error(`\nBuild failed with distro "${distroLabel}".`);
+      if (candidates.indexOf(distro) < candidates.length - 1) {
+        console.error("Trying next distro...\n");
+      }
+    }
+  }
+
+  if (!success) {
+    console.error("\nFailed to build GRUB binaries with all available WSL distros.");
     console.error("");
     console.error("This requires a Debian/Ubuntu-based WSL distro with GRUB packages.");
     console.error("To fix this:");
