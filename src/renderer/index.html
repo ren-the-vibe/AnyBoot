@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>AnyBoot</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>AnyBoot</h1>
+      <p class="subtitle">Multiboot USB Drive Creator</p>
+    </header>
+
+    <!-- Dependency Check Banner -->
+    <div id="dep-banner" class="banner hidden">
+      <span id="dep-message"></span>
+    </div>
+
+    <!-- Progress Bar -->
+    <div id="progress-container" class="hidden">
+      <div id="progress-bar">
+        <div id="progress-fill"></div>
+      </div>
+      <p id="progress-text"></p>
+    </div>
+
+    <!-- Step 1: Device Selection -->
+    <section class="card">
+      <h2>1. Select USB Device</h2>
+      <div class="row">
+        <select id="device-select">
+          <option value="">-- Select a USB device --</option>
+        </select>
+        <button id="refresh-btn" title="Refresh device list">Refresh</button>
+      </div>
+      <div id="device-info" class="info hidden"></div>
+    </section>
+
+    <!-- Step 2: Prepare Drive -->
+    <section class="card">
+      <h2>2. Prepare Drive</h2>
+      <p class="description">
+        Partitions the USB drive, formats it, and installs the GRUB2 bootloader
+        for both BIOS and UEFI boot support.
+      </p>
+      <div class="warning">
+        This will erase ALL data on the selected USB drive!
+      </div>
+      <button id="prepare-btn" class="primary" disabled>Prepare Drive</button>
+    </section>
+
+    <!-- Step 3: Manage ISOs -->
+    <section class="card">
+      <h2>3. Manage ISOs</h2>
+      <div class="row">
+        <button id="add-iso-btn" disabled>Add ISO</button>
+      </div>
+      <div id="iso-list">
+        <p class="empty-state">No ISOs added yet. Prepare the drive first, then add ISO files.</p>
+      </div>
+    </section>
+
+    <!-- Status Bar -->
+    <footer>
+      <span id="status-text">Ready</span>
+    </footer>
+  </div>
+
+  <script src="index.js"></script>
+</body>
+</html>

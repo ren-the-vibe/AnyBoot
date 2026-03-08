@@ -1,0 +1,15 @@
+appId: com.anyboot.app
+productName: AnyBoot
+directories:
+  output: release
+files:
+  - dist/**/*
+  - resources/**/*
+extraResources:
+  - from: resources/
+    to: resources/
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Utility
