@@ -57,8 +57,23 @@ async function checkDependencies(): Promise<void> {
 }
 
 async function refreshDevices(): Promise<void> {
-  statusText.textContent = "Scanning for USB devices...";
-  const devices = await anyboot.listDevices();
+  statusText.textContent = "Scanning for devices...";
+
+  let result: any;
+  try {
+    result = await anyboot.listDevices();
+  } catch (err: any) {
+    statusText.textContent = `Error scanning devices: ${err.message || err}`;
+    return;
+  }
+
+  // Check if backend returned an error object
+  if (result && result.error) {
+    statusText.textContent = `Error: ${result.error}`;
+    return;
+  }
+
+  const devices: any[] = Array.isArray(result) ? result : [];
 
   // Clear current options (keep placeholder)
   while (deviceSelect.options.length > 1) {
@@ -73,9 +88,9 @@ async function refreshDevices(): Promise<void> {
   }
 
   if (devices.length === 0) {
-    statusText.textContent = "No USB devices found.";
+    statusText.textContent = "No devices found.";
   } else {
-    statusText.textContent = `Found ${devices.length} USB device(s).`;
+    statusText.textContent = `Found ${devices.length} device(s).`;
   }
 
   // Reset selection

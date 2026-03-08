@@ -58,11 +58,16 @@ function getGrubBinariesDir(): string {
 export function registerIpcHandlers(): void {
   // --- Device listing ---
   ipcMain.handle("list-devices", async () => {
-    if (isWindows()) {
-      const { detect } = await loadWindowsModules();
-      return detect.listUsbDevicesWindows();
+    try {
+      if (isWindows()) {
+        const { detect } = await loadWindowsModules();
+        return await detect.listUsbDevicesWindows();
+      }
+      return await listUsbDevices();
+    } catch (err: any) {
+      console.error("list-devices error:", err);
+      return { error: err.message || String(err) };
     }
-    return listUsbDevices();
   });
 
   // --- Drive preparation ---
