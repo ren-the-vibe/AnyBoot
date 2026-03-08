@@ -38,11 +38,13 @@ On Windows, AnyBoot uses native tools:
 - PowerShell for USB device detection and partition management
 - Bundled GRUB2 binaries (copied directly, no `grub-install` needed)
 
-## Build & Run
+## Getting Started
 
 ```bash
 npm install
-npm start
+npm start       # builds and launches the app
+npm run dev     # same, for development
+npm run dist    # package as distributable (AppImage/deb)
 ```
 
 ## How It Works
