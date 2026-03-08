@@ -23,6 +23,8 @@ function createWindow(): void {
 
   mainWindow.loadFile(join(__dirname, "..", "renderer", "index.html"));
 
+  mainWindow.webContents.openDevTools({ mode: "bottom" });
+
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
