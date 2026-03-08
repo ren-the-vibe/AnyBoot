@@ -39,6 +39,8 @@ if [ -z "$GRUB_MKIMAGE" ]; then
   exit 1
 fi
 
+BUILT=0
+
 # Find GRUB module directories
 BIOS_MOD_DIR=""
 for dir in /usr/lib/grub/i386-pc /usr/lib/grub2/i386-pc /usr/share/grub2/i386-pc; do
@@ -95,6 +97,7 @@ if [ -n "$BIOS_MOD_DIR" ]; then
 
   echo "BIOS: boot.img ($(wc -c < "$OUTPUT_DIR/i386-pc/boot.img") bytes)"
   echo "BIOS: core.img ($(wc -c < "$OUTPUT_DIR/i386-pc/core.img") bytes)"
+  BUILT=$((BUILT + 1))
 else
   echo "WARNING: BIOS GRUB modules not found. Skipping BIOS build."
 fi
@@ -120,8 +123,16 @@ if [ -n "$EFI_MOD_DIR" ]; then
   done
 
   echo "UEFI: grubx64.efi ($(wc -c < "$OUTPUT_DIR/x86_64-efi/grubx64.efi") bytes)"
+  BUILT=$((BUILT + 1))
 else
   echo "WARNING: UEFI GRUB modules not found. Skipping UEFI build."
+fi
+
+if [ "$BUILT" -eq 0 ]; then
+  echo ""
+  echo "Error: No GRUB binaries were built. Module directories not found."
+  echo "Install GRUB packages and try again."
+  exit 1
 fi
 
 echo ""
