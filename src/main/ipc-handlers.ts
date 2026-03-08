@@ -1,14 +1,31 @@
 import { ipcMain, dialog, BrowserWindow } from "electron";
+import { execFile } from "child_process";
+import { promisify } from "util";
+import { existsSync } from "fs";
+import { join, resolve } from "path";
+import { SystemCheck } from "../shared/types";
+import { isWindows } from "./utils/platform";
+import { runCommand } from "./utils/command-runner";
+
+// Linux imports
 import { listUsbDevices } from "./usb/detect";
 import { partitionDrive } from "./usb/partition";
 import { formatDrive } from "./usb/format";
 import { installGrub } from "./grub/install";
 import { addIso, removeIso, listIsos } from "./iso/manager";
-import { SystemCheck } from "../shared/types";
-import { runCommand } from "./utils/command-runner";
-import { isWindows, isWslAvailable } from "./utils/platform";
 
-const REQUIRED_TOOLS = [
+// Windows imports (lazy-loaded to avoid errors on Linux)
+const loadWindowsModules = async () => ({
+  detect: await import("./windows/detect"),
+  partition: await import("./windows/partition"),
+  format: await import("./windows/format"),
+  grub: await import("./windows/grub"),
+  isoManager: await import("./windows/iso-manager"),
+});
+
+const execFileAsync = promisify(execFile);
+
+const LINUX_REQUIRED_TOOLS = [
   "sgdisk",
   "mkfs.fat",
   "grub-install",
@@ -18,6 +35,11 @@ const REQUIRED_TOOLS = [
   "partprobe",
 ];
 
+const WINDOWS_REQUIRED_TOOLS = [
+  "diskpart",
+  "powershell",
+];
+
 function sendProgress(message: string, percent: number = -1) {
   const windows = BrowserWindow.getAllWindows();
   for (const win of windows) {
@@ -25,38 +47,78 @@ function sendProgress(message: string, percent: number = -1) {
   }
 }
 
+function getGrubBinariesDir(): string {
+  const isDev = !process.resourcesPath?.includes("app.asar");
+  if (isDev) {
+    return resolve(__dirname, "..", "..", "resources", "grub");
+  }
+  return join(process.resourcesPath, "resources", "grub");
+}
+
 export function registerIpcHandlers(): void {
+  // --- Device listing ---
   ipcMain.handle("list-devices", async () => {
+    if (isWindows()) {
+      const { detect } = await loadWindowsModules();
+      return detect.listUsbDevicesWindows();
+    }
     return listUsbDevices();
   });
 
+  // --- Drive preparation ---
   ipcMain.handle("prepare-device", async (_event, devicePath: string) => {
     try {
-      sendProgress("Partitioning drive...", 10);
-      await partitionDrive(devicePath);
+      if (isWindows()) {
+        const win = await loadWindowsModules();
 
-      sendProgress("Formatting partitions...", 30);
-      await formatDrive(devicePath);
+        sendProgress("Partitioning drive...", 10);
+        await win.partition.partitionDriveWindows(devicePath);
 
-      sendProgress("Installing GRUB2 bootloader...", 50);
-      await installGrub(devicePath, (msg) => {
-        sendProgress(msg, 70);
-      });
+        // Formatting is done by diskpart during partitioning
+        sendProgress("Formatting complete.", 30);
 
-      sendProgress("Drive preparation complete!", 100);
+        sendProgress("Installing GRUB2 bootloader...", 50);
+        await win.grub.installGrubWindows(devicePath, (msg) => {
+          sendProgress(msg, 70);
+        });
+
+        sendProgress("Drive preparation complete!", 100);
+      } else {
+        sendProgress("Partitioning drive...", 10);
+        await partitionDrive(devicePath);
+
+        sendProgress("Formatting partitions...", 30);
+        await formatDrive(devicePath);
+
+        sendProgress("Installing GRUB2 bootloader...", 50);
+        await installGrub(devicePath, (msg) => {
+          sendProgress(msg, 70);
+        });
+
+        sendProgress("Drive preparation complete!", 100);
+      }
+
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message || String(err) };
     }
   });
 
+  // --- ISO management ---
   ipcMain.handle(
     "add-iso",
     async (_event, isoPath: string, devicePath: string) => {
       try {
-        await addIso(isoPath, devicePath, (percent, message) => {
-          sendProgress(message, percent);
-        });
+        if (isWindows()) {
+          const { isoManager } = await loadWindowsModules();
+          await isoManager.addIsoWindows(isoPath, devicePath, (percent, message) => {
+            sendProgress(message, percent);
+          });
+        } else {
+          await addIso(isoPath, devicePath, (percent, message) => {
+            sendProgress(message, percent);
+          });
+        }
         return { success: true };
       } catch (err: any) {
         return { success: false, error: err.message || String(err) };
@@ -68,7 +130,12 @@ export function registerIpcHandlers(): void {
     "remove-iso",
     async (_event, isoName: string, devicePath: string) => {
       try {
-        await removeIso(isoName, devicePath);
+        if (isWindows()) {
+          const { isoManager } = await loadWindowsModules();
+          await isoManager.removeIsoWindows(isoName, devicePath);
+        } else {
+          await removeIso(isoName, devicePath);
+        }
         return { success: true };
       } catch (err: any) {
         return { success: false, error: err.message || String(err) };
@@ -78,91 +145,88 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle("list-isos", async (_event, devicePath: string) => {
     try {
+      if (isWindows()) {
+        const { isoManager } = await loadWindowsModules();
+        return await isoManager.listIsosWindows(devicePath);
+      }
       return await listIsos(devicePath);
     } catch (err: any) {
       return [];
     }
   });
 
+  // --- Dependency check ---
   ipcMain.handle("check-dependencies", async () => {
     const results: SystemCheck[] = [];
 
-    // On Windows, first check that WSL is available
     if (isWindows()) {
-      const wslOk = await isWslAvailable();
-      results.push({
-        tool: "wsl",
-        available: wslOk,
-        path: wslOk ? "Windows Subsystem for Linux" : undefined,
-      });
-
-      if (!wslOk) {
-        // If WSL isn't available, all other tools will fail too
-        for (const tool of REQUIRED_TOOLS) {
+      // Check Windows-native tools
+      for (const tool of WINDOWS_REQUIRED_TOOLS) {
+        try {
+          const { stdout } = await execFileAsync("where", [tool]);
+          results.push({ tool, available: true, path: stdout.trim().split("\n")[0] });
+        } catch {
           results.push({ tool, available: false });
         }
-        return results;
       }
-    }
 
-    // Check each tool (routed through WSL on Windows automatically)
-    for (const tool of REQUIRED_TOOLS) {
+      // Check for bundled GRUB binaries
+      const grubDir = getGrubBinariesDir();
+      const hasUefi = existsSync(join(grubDir, "x86_64-efi", "grubx64.efi"));
+      const hasBios = existsSync(join(grubDir, "i386-pc", "boot.img"));
+
+      results.push({
+        tool: "grub-uefi-binaries",
+        available: hasUefi,
+        path: hasUefi ? join(grubDir, "x86_64-efi") : undefined,
+      });
+      results.push({
+        tool: "grub-bios-binaries",
+        available: hasBios,
+        path: hasBios ? join(grubDir, "i386-pc") : undefined,
+      });
+
+      // Check admin privileges
       try {
-        const { stdout } = await runCommand("which", [tool]);
-        results.push({ tool, available: true, path: stdout.trim() });
+        await execFileAsync("net", ["session"]);
+        results.push({
+          tool: "admin-privileges",
+          available: true,
+          path: "Running as Administrator",
+        });
       } catch {
-        // On Fedora/RHEL, grub-install might be named grub2-install
-        if (tool === "grub-install") {
-          try {
-            const { stdout } = await runCommand("which", ["grub2-install"]);
-            results.push({
-              tool,
-              available: true,
-              path: stdout.trim() + " (as grub2-install)",
-            });
-            continue;
-          } catch {}
+        results.push({
+          tool: "admin-privileges",
+          available: false,
+        });
+      }
+    } else {
+      // Linux: check system tools
+      for (const tool of LINUX_REQUIRED_TOOLS) {
+        try {
+          const { stdout } = await runCommand("which", [tool]);
+          results.push({ tool, available: true, path: stdout.trim() });
+        } catch {
+          if (tool === "grub-install") {
+            try {
+              const { stdout } = await runCommand("which", ["grub2-install"]);
+              results.push({
+                tool,
+                available: true,
+                path: stdout.trim() + " (as grub2-install)",
+              });
+              continue;
+            } catch {}
+          }
+          results.push({ tool, available: false });
         }
-        results.push({ tool, available: false });
       }
     }
 
     return results;
   });
 
-  // WSL disk management (Windows only)
-  ipcMain.handle(
-    "attach-disk-wsl",
-    async (_event, physicalDriveId: string) => {
-      if (!isWindows()) {
-        return { success: false, error: "Not running on Windows" };
-      }
-      try {
-        const { attachDiskToWsl } = await import("./usb/wsl-disk");
-        const wslPath = await attachDiskToWsl(physicalDriveId);
-        return { success: true, wslPath };
-      } catch (err: any) {
-        return { success: false, error: err.message || String(err) };
-      }
-    }
-  );
-
-  ipcMain.handle(
-    "detach-disk-wsl",
-    async (_event, physicalDriveId: string) => {
-      if (!isWindows()) {
-        return { success: false, error: "Not running on Windows" };
-      }
-      try {
-        const { detachDiskFromWsl } = await import("./usb/wsl-disk");
-        await detachDiskFromWsl(physicalDriveId);
-        return { success: true };
-      } catch (err: any) {
-        return { success: false, error: err.message || String(err) };
-      }
-    }
-  );
-
+  // --- File dialog ---
   ipcMain.handle("select-iso-file", async () => {
     const result = await dialog.showOpenDialog({
       title: "Select ISO File",

@@ -9,49 +9,34 @@ A tool to create a multiboot USB drive. When booted, the USB shows a GRUB2 menu 
 - **Dynamic ISO detection** - GRUB2 automatically scans for ISO files at boot time
 - **Distro-aware** - Supports Ubuntu, Debian, Fedora, Arch, openSUSE, and more
 - **Electron GUI** - Simple graphical interface for drive preparation and ISO management
-- **Windows support** - Runs on Windows via WSL (Windows Subsystem for Linux)
+- **Cross-platform** - Runs natively on both Linux and Windows (no WSL needed)
 
 ## Requirements
 
-### System tools (must be installed on your Linux host)
+### Linux
 
-- `sgdisk` (from `gdisk` package) - GPT partitioning
-- `mkfs.fat` (from `dosfstools` package) - FAT32 formatting
-- `grub-install` (from `grub2` package) - GRUB2 bootloader
-- `partprobe` (from `parted` package) - Kernel partition table reload
-- `lsblk` (from `util-linux`) - Device enumeration
-
-### Install dependencies (Ubuntu/Debian)
+Install these system tools:
 
 ```bash
+# Ubuntu/Debian
 sudo apt install gdisk dosfstools grub2-common grub-pc-bin grub-efi-amd64-bin parted
-```
 
-### Install dependencies (Fedora)
-
-```bash
+# Fedora
 sudo dnf install gdisk dosfstools grub2-tools grub2-pc-modules grub2-efi-x64-modules parted
-```
 
-### Install dependencies (Arch)
-
-```bash
+# Arch
 sudo pacman -S gptfdisk dosfstools grub parted
 ```
 
-### Running on Windows (via WSL)
+### Windows
 
-AnyBoot can run on Windows by delegating system operations to WSL. You need:
+- **Run as Administrator** (required for disk operations)
+- **GRUB binaries must be bundled** - Run `scripts/build-grub-binaries.sh` on a Linux machine first to generate the GRUB bootloader files, then include them in `resources/grub/`
 
-1. **WSL2** installed and running (`wsl --install` in an admin PowerShell)
-2. **Required tools installed inside WSL** (see Ubuntu/Debian instructions above)
-3. **Run AnyBoot as Administrator** (needed for `wsl --mount` to attach USB disks)
-
-When running on Windows, AnyBoot will:
-- Detect USB drives via PowerShell
-- Attach the selected drive to WSL using `wsl --mount --bare`
-- Run all partitioning, formatting, and GRUB installation inside WSL
-- Translate file paths between Windows and WSL automatically
+On Windows, AnyBoot uses native tools:
+- `diskpart` for partitioning and formatting
+- PowerShell for USB device detection and partition management
+- Bundled GRUB2 binaries (copied directly, no `grub-install` needed)
 
 ## Build & Run
 
