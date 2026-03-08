@@ -10,7 +10,7 @@ interface AnyBootAPI {
   onProgress: (callback: (event: any, data: any) => void) => () => void;
 }
 
-const anyboot = (window as any).anyboot as AnyBootAPI;
+const api = (window as any).anyboot as AnyBootAPI;
 
 // DOM elements
 const deviceSelect = document.getElementById("device-select") as HTMLSelectElement;
@@ -30,7 +30,7 @@ let selectedDevice: string = "";
 let isOperationRunning = false;
 
 // Progress listener
-anyboot.onProgress((_event, data) => {
+api.onProgress((_event, data) => {
   showProgress(data.message, data.percent);
 });
 
@@ -45,7 +45,7 @@ checkDependencies();
 refreshDevices();
 
 async function checkDependencies(): Promise<void> {
-  const results = await anyboot.checkDependencies();
+  const results = await api.checkDependencies();
   const missing = results.filter((r: any) => !r.available);
 
   if (missing.length > 0) {
@@ -61,7 +61,7 @@ async function refreshDevices(): Promise<void> {
 
   let result: any;
   try {
-    result = await anyboot.listDevices();
+    result = await api.listDevices();
   } catch (err: any) {
     depBanner.className = "banner error";
     depMessage.textContent = `Error scanning devices: ${err.message || err}`;
@@ -134,7 +134,7 @@ async function prepareDrive(): Promise<void> {
   setOperationRunning(true);
   showProgress("Starting drive preparation...", 0);
 
-  const result = await anyboot.prepareDevice(selectedDevice);
+  const result = await api.prepareDevice(selectedDevice);
 
   if (result.success) {
     hideProgress();
@@ -152,13 +152,13 @@ async function prepareDrive(): Promise<void> {
 async function addIsoFile(): Promise<void> {
   if (!selectedDevice) return;
 
-  const isoPath = await anyboot.selectIsoFile();
+  const isoPath = await api.selectIsoFile();
   if (!isoPath) return;
 
   setOperationRunning(true);
   showProgress("Adding ISO...", 0);
 
-  const result = await anyboot.addIso(isoPath, selectedDevice);
+  const result = await api.addIso(isoPath, selectedDevice);
 
   if (result.success) {
     hideProgress();
@@ -182,7 +182,7 @@ async function removeIsoFile(isoName: string): Promise<void> {
   setOperationRunning(true);
   statusText.textContent = `Removing ${isoName}...`;
 
-  const result = await anyboot.removeIso(isoName, selectedDevice);
+  const result = await api.removeIso(isoName, selectedDevice);
 
   if (result.success) {
     statusText.textContent = `${isoName} removed.`;
@@ -198,7 +198,7 @@ async function refreshIsoList(): Promise<void> {
   if (!selectedDevice) return;
 
   try {
-    const isos = await anyboot.listIsos(selectedDevice);
+    const isos = await api.listIsos(selectedDevice);
 
     if (isos.length === 0) {
       isoList.innerHTML = '<p class="empty-state">No ISOs on this drive. Click "Add ISO" to add one.</p>';
