@@ -107,8 +107,10 @@ export async function partitionDriveWindows(
     `create partition primary size=200`,
     `format fs=fat32 label="EFI" quick`,
     // Partition 2: will become BIOS Boot Partition (1 MB)
+    // Cannot format (too small for FAT32). Mark as hidden + no-automount
+    // so Windows never assigns a drive letter or shows a format dialog.
     `create partition primary size=1`,
-    `format fs=fat32 label="BIOS" quick`,
+    `gpt attributes=0x4000000000000000`,
     // Partition 3: Data partition (remaining space)
     `create partition primary`,
     `format fs=fat32 label="ANYBOOT" quick`,
