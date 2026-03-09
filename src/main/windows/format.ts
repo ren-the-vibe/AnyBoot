@@ -70,10 +70,13 @@ export async function assignDriveLetter(
 
     try {
       await execFileAsync("diskpart", ["/s", scriptPath]);
-    } finally {
-      try {
-        await unlink(scriptPath);
-      } catch {}
+      try { await unlink(scriptPath); } catch {}
+    } catch (err: any) {
+      const detail = err.stderr || err.stdout || err.message || String(err);
+      throw new Error(
+        `diskpart failed (script: ${scriptPath}):\n${detail}\n\n` +
+        `Make sure the application is running as Administrator.`
+      );
     }
 
     return letter;
@@ -114,9 +117,12 @@ export async function removeDriveLetter(
 
   try {
     await execFileAsync("diskpart", ["/s", scriptPath]);
-  } finally {
-    try {
-      await unlink(scriptPath);
-    } catch {}
+    try { await unlink(scriptPath); } catch {}
+  } catch (err: any) {
+    const detail = err.stderr || err.stdout || err.message || String(err);
+    throw new Error(
+      `diskpart failed (script: ${scriptPath}):\n${detail}\n\n` +
+      `Make sure the application is running as Administrator.`
+    );
   }
 }

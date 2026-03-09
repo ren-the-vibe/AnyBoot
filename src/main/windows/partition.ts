@@ -51,10 +51,14 @@ export async function partitionDriveWindows(
 
   try {
     await execFileAsync("diskpart", ["/s", scriptPath]);
-  } finally {
-    try {
-      await unlink(scriptPath);
-    } catch {}
+    // Only clean up on success so the file can be inspected on failure
+    try { await unlink(scriptPath); } catch {}
+  } catch (err: any) {
+    const detail = err.stderr || err.stdout || err.message || String(err);
+    throw new Error(
+      `diskpart failed (script: ${scriptPath}):\n${detail}\n\n` +
+      `Make sure the application is running as Administrator.`
+    );
   }
 
   // Set the BIOS boot partition type to EF02 using PowerShell
