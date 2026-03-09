@@ -11,6 +11,14 @@ export function getGrubCfgSourcePath(): string {
   return join(process.resourcesPath, "resources", "grub", "grub.cfg");
 }
 
+export function getGrubBootstrapCfgPath(): string {
+  const isDev = !process.resourcesPath?.includes("app.asar");
+  if (isDev) {
+    return join(__dirname, "..", "..", "..", "resources", "grub", "grub-bootstrap.cfg");
+  }
+  return join(process.resourcesPath, "resources", "grub", "grub-bootstrap.cfg");
+}
+
 export async function installGrubConfig(dataMountpoint: string): Promise<void> {
   const source = getGrubCfgSourcePath();
   const target = join(dataMountpoint, "boot", "grub", "grub.cfg");

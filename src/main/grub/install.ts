@@ -1,4 +1,4 @@
-import { join } from "path";
+import { join, resolve } from "path";
 import { partitionPath } from "../usb/format";
 import {
   mountPartition,
@@ -6,9 +6,17 @@ import {
   createTempMountpoint,
   removeMountpoint,
 } from "../usb/mount";
-import { getGrubCfgSourcePath } from "./config";
+import { getGrubCfgSourcePath, getGrubBootstrapCfgPath } from "./config";
 import { runCommand } from "../utils/command-runner";
 import { isWindows, toWslPath } from "../utils/platform";
+
+function getGrubResourcesDir(): string {
+  const isDev = !process.resourcesPath?.includes("app.asar");
+  if (isDev) {
+    return resolve(__dirname, "..", "..", "..", "resources", "grub");
+  }
+  return join(process.resourcesPath, "resources", "grub");
+}
 
 export async function installGrub(
   devicePath: string,
@@ -91,6 +99,41 @@ export async function installGrub(
         { asRoot: true }
       );
     }
+
+    // Overwrite UEFI binaries with Secure Boot-signed chain
+    onProgress?.("Installing Secure Boot binaries...");
+    const grubResDir = getGrubResourcesDir();
+    const uefiSrc = join(grubResDir, "x86_64-efi");
+    const efiBootDir = join(espMount, "EFI", "BOOT");
+    const efiUbuntuDir = join(espMount, "EFI", "ubuntu");
+
+    await runCommand("mkdir", ["-p", efiUbuntuDir], { asRoot: true });
+    await runCommand(
+      "cp",
+      [join(uefiSrc, "shimx64.efi.signed"), join(efiBootDir, "BOOTx64.EFI")],
+      { asRoot: true }
+    );
+    await runCommand(
+      "cp",
+      [join(uefiSrc, "grubx64.efi.signed"), join(efiBootDir, "grubx64.efi")],
+      { asRoot: true }
+    );
+    await runCommand(
+      "cp",
+      [join(uefiSrc, "mmx64.efi"), join(efiBootDir, "mmx64.efi")],
+      { asRoot: true }
+    );
+
+    // Redirect config for signed GRUB's hardcoded /EFI/ubuntu prefix
+    let bootstrapCfg = getGrubBootstrapCfgPath();
+    if (isWindows()) {
+      bootstrapCfg = toWslPath(bootstrapCfg);
+    }
+    await runCommand(
+      "cp",
+      [bootstrapCfg, join(efiUbuntuDir, "grub.cfg")],
+      { asRoot: true }
+    );
 
     // Install grub.cfg
     onProgress?.("Installing GRUB configuration...");

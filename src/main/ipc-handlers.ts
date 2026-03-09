@@ -200,6 +200,13 @@ export function registerIpcHandlers(): void {
         path: hasBios ? join(grubDir, "i386-pc") : undefined,
       });
 
+      const hasSecureBoot = existsSync(join(grubDir, "x86_64-efi", "shimx64.efi.signed"));
+      results.push({
+        tool: "secure-boot-binaries",
+        available: hasSecureBoot,
+        path: hasSecureBoot ? join(grubDir, "x86_64-efi") : undefined,
+      });
+
       // Check admin privileges
       try {
         await execFileAsync("net", ["session"]);

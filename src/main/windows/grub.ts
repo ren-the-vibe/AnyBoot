@@ -15,7 +15,7 @@ import {
   removeDriveLetter,
   getPartitionDriveLetter,
 } from "./format";
-import { getGrubCfgSourcePath } from "../grub/config";
+import { getGrubCfgSourcePath, getGrubBootstrapCfgPath } from "../grub/config";
 
 const execFileAsync = promisify(execFile);
 
@@ -79,21 +79,34 @@ export async function installGrubWindows(
     // Create directory structure
     onProgress?.("Creating directory structure...");
     await mkdir(join(espRoot, "EFI", "BOOT"), { recursive: true });
+    await mkdir(join(espRoot, "EFI", "ubuntu"), { recursive: true });
     await mkdir(join(dataRoot, "boot", "grub", "i386-pc"), { recursive: true });
     await mkdir(join(dataRoot, "boot", "grub", "x86_64-efi"), {
       recursive: true,
     });
     await mkdir(join(dataRoot, "iso"), { recursive: true });
 
-    // --- UEFI Installation ---
-    onProgress?.("Installing GRUB2 for UEFI...");
+    // --- UEFI Installation (Secure Boot compatible) ---
+    onProgress?.("Installing GRUB2 for UEFI (Secure Boot)...");
     const uefiSrc = join(grubDir, "x86_64-efi");
 
-    // Copy grubx64.efi as the default UEFI boot loader
+    // Secure Boot chain: shim (Microsoft-signed) → signed GRUB → our config
     await copyFile(
-      join(uefiSrc, "grubx64.efi"),
+      join(uefiSrc, "shimx64.efi.signed"),
       join(espRoot, "EFI", "BOOT", "BOOTx64.EFI")
     );
+    await copyFile(
+      join(uefiSrc, "grubx64.efi.signed"),
+      join(espRoot, "EFI", "BOOT", "grubx64.efi")
+    );
+    await copyFile(
+      join(uefiSrc, "mmx64.efi"),
+      join(espRoot, "EFI", "BOOT", "mmx64.efi")
+    );
+
+    // Redirect config: signed GRUB looks at /EFI/ubuntu/grub.cfg (hardcoded prefix)
+    const bootstrapCfg = getGrubBootstrapCfgPath();
+    await copyFile(bootstrapCfg, join(espRoot, "EFI", "ubuntu", "grub.cfg"));
 
     // Copy UEFI GRUB modules to data partition
     await copyDirectoryContents(
