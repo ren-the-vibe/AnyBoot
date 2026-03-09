@@ -11,7 +11,7 @@ extraResources:
 win:
   target:
     - nsis
-  sign: false
+  forceCodeSigning: false
 linux:
   target:
     - AppImage
