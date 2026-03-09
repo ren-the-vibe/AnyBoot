@@ -28,6 +28,10 @@ header h1 {
   margin-bottom: 4px;
 }
 
+header h1 .title-boot {
+  color: #ffb74d;
+}
+
 header .subtitle {
   color: #888;
   font-size: 14px;

@@ -1,5 +1,5 @@
-appId: com.anyboot.app
-productName: AnyBoot
+appId: com.bootany.app
+productName: BootAny
 directories:
   output: release
 files:
@@ -12,7 +12,7 @@ win:
   target:
     - nsis
     - portable
-  icon: AnyBoot.png
+  icon: BootAny.png
   forceCodeSigning: false
   signtoolOptions:
     sign: scripts/sign.js
@@ -20,7 +20,7 @@ linux:
   target:
     - AppImage
     - deb
-  icon: AnyBoot.png
+  icon: BootAny.png
   category: Utility
 mac:
-  icon: AnyBoot.png
+  icon: BootAny.png

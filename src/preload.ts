@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 
-contextBridge.exposeInMainWorld("anyboot", {
+contextBridge.exposeInMainWorld("bootany", {
   listDevices: () => ipcRenderer.invoke("list-devices"),
   prepareDevice: (devicePath: string) =>
     ipcRenderer.invoke("prepare-device", devicePath),

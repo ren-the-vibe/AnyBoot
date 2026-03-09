@@ -23,7 +23,7 @@ export async function partitionDrive(devicePath: string): Promise<void> {
       "--change-name=2:BIOS",
       "--new=3:0:0",
       "--typecode=3:0700",
-      "--change-name=3:ANYBOOT",
+      "--change-name=3:BOOTANY",
       devicePath,
     ],
     { asRoot: true }

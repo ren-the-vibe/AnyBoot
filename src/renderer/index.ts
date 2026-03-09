@@ -1,5 +1,5 @@
-// Type declarations for the anyboot API exposed via preload
-interface AnyBootAPI {
+// Type declarations for the bootany API exposed via preload
+interface BootAnyAPI {
   listDevices: () => Promise<any[]>;
   prepareDevice: (devicePath: string) => Promise<{ success: boolean; error?: string }>;
   addIso: (isoPath: string, devicePath: string) => Promise<{ success: boolean; error?: string }>;
@@ -10,7 +10,7 @@ interface AnyBootAPI {
   onProgress: (callback: (event: any, data: any) => void) => () => void;
 }
 
-const api = (window as any).anyboot as AnyBootAPI;
+const api = (window as any).bootany as BootAnyAPI;
 
 // DOM elements
 const deviceSelect = document.getElementById("device-select") as HTMLSelectElement;
@@ -51,7 +51,7 @@ async function checkDependencies(): Promise<void> {
   if (missing.length > 0) {
     const tools = missing.map((r: any) => r.tool).join(", ");
     depBanner.className = "banner error";
-    depMessage.textContent = `Missing: ${tools}. Install them before using AnyBoot.`;
+    depMessage.textContent = `Missing: ${tools}. Install them before using BootAny.`;
     depBanner.classList.remove("hidden");
   }
 }

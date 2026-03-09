@@ -1,4 +1,6 @@
-import { copyFile, stat, readdir, unlink } from "fs/promises";
+import { stat, readdir, unlink, mkdir } from "fs/promises";
+import { createReadStream, createWriteStream } from "fs";
+import { pipeline } from "stream/promises";
 import { join, basename } from "path";
 import { IsoFile } from "../../shared/types";
 import { probeIsoByFilename } from "../iso/probe";
@@ -57,36 +59,29 @@ export async function addIsoWindows(
 ): Promise<void> {
   await withDataPartition(devicePath, async (dataRoot) => {
     const isoDir = join(dataRoot, "iso");
-    const destPath = join(isoDir, basename(isoPath));
+    await mkdir(isoDir, { recursive: true });
+    const name = basename(isoPath);
+    const destPath = join(isoDir, name);
 
     const srcStat = await stat(isoPath);
     const totalBytes = srcStat.size;
 
-    onProgress?.(0, `Copying ${basename(isoPath)}...`);
+    onProgress?.(0, `Copying ${name}... 0% (0 B / ${formatSize(totalBytes)})`);
 
-    // Use Node.js native file copy with progress polling
-    const copyPromise = copyFile(isoPath, destPath);
+    // Use streaming copy instead of copyFile — NTFS pre-allocates the full
+    // file size, so stat-polling the destination always reports 100% instantly.
+    const src = createReadStream(isoPath);
+    const dest = createWriteStream(destPath);
+    let copiedBytes = 0;
 
-    // Poll destination file size for progress
-    const interval = setInterval(async () => {
-      try {
-        const destStat = await stat(destPath);
-        const percent = Math.min(
-          99,
-          Math.round((destStat.size / totalBytes) * 100)
-        );
-        onProgress?.(percent, `Copying ${basename(isoPath)}...`);
-      } catch {
-        // File may not exist yet
-      }
-    }, 500);
+    src.on("data", (chunk: string | Buffer) => {
+      copiedBytes += chunk.length;
+      const percent = Math.min(99, Math.round((copiedBytes / totalBytes) * 100));
+      onProgress?.(percent, `Copying ${name}... ${percent}% (${formatSize(copiedBytes)} / ${formatSize(totalBytes)})`);
+    });
 
-    try {
-      await copyPromise;
-      onProgress?.(100, "Copy complete.");
-    } finally {
-      clearInterval(interval);
-    }
+    await pipeline(src, dest);
+    onProgress?.(100, "Copy complete.");
   });
 }
 

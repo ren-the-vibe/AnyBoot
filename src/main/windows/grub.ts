@@ -47,7 +47,7 @@ export async function installGrubWindows(
   const layout = await getPartitionLayout(devicePath);
   if (!layout) {
     throw new Error(
-      "Cannot install GRUB: drive does not have the expected AnyBoot partition layout. " +
+      "Cannot install GRUB: drive does not have the expected BootAny partition layout. " +
         "Please prepare the drive first."
     );
   }

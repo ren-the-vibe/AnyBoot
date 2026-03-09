@@ -9,10 +9,10 @@ function createWindow(): void {
 
   mainWindow = new BrowserWindow({
     width: 800,
-    height: 600,
+    height: 700,
     minWidth: 600,
-    minHeight: 400,
-    title: "AnyBoot",
+    minHeight: 500,
+    title: "BootAny",
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, "..", "preload.js"),

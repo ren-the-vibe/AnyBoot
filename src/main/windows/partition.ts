@@ -114,10 +114,10 @@ export async function partitionDriveWindows(
     // Partition 3: Data partition (remaining space)
     // Use NTFS instead of FAT32 to support ISO files larger than 4GB.
     `create partition primary`,
-    `format fs=ntfs label="ANYBOOT" quick`,
+    `format fs=ntfs label="BOOTANY" quick`,
   ].join("\n");
 
-  const scriptPath = join(tmpdir(), `anyboot-diskpart-${Date.now()}.txt`);
+  const scriptPath = join(tmpdir(), `bootany-diskpart-${Date.now()}.txt`);
   await writeFile(scriptPath, script, "utf-8");
 
   try {

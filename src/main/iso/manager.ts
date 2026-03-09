@@ -37,7 +37,8 @@ export async function addIso(
     const srcStat = await stat(isoPath);
     const totalBytes = srcStat.size;
 
-    onProgress?.(0, `Copying ${basename(isoPath)}...`);
+    const name = basename(isoPath);
+    onProgress?.(0, `Copying ${name}... 0% (0 B / ${formatSize(totalBytes)})`);
 
     // Translate the ISO source path for WSL if on Windows
     const srcPath = translatePath(isoPath);
@@ -73,7 +74,7 @@ export async function addIso(
                 99,
                 Math.round((currentBytes / totalBytes) * 100)
               );
-              onProgress?.(percent, `Copying ${basename(isoPath)}...`);
+              onProgress?.(percent, `Copying ${name}... ${percent}% (${formatSize(currentBytes)} / ${formatSize(totalBytes)})`);
             }
           } else {
             const destStat = await stat(destPath);
@@ -81,7 +82,7 @@ export async function addIso(
               99,
               Math.round((destStat.size / totalBytes) * 100)
             );
-            onProgress?.(percent, `Copying ${basename(isoPath)}...`);
+            onProgress?.(percent, `Copying ${name}... ${percent}% (${formatSize(destStat.size)} / ${formatSize(totalBytes)})`);
           }
         } catch {
           // File may not exist yet

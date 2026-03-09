@@ -65,7 +65,7 @@ export async function assignDriveLetter(
       `assign letter=${letter}`,
     ].join("\n");
 
-    const scriptPath = join(tmpdir(), `anyboot-assign-${Date.now()}.txt`);
+    const scriptPath = join(tmpdir(), `bootany-assign-${Date.now()}.txt`);
     await writeFile(scriptPath, script, "utf-8");
 
     try {
@@ -112,7 +112,7 @@ export async function removeDriveLetter(
     `remove letter=${letter}`,
   ].join("\n");
 
-  const scriptPath = join(tmpdir(), `anyboot-remove-${Date.now()}.txt`);
+  const scriptPath = join(tmpdir(), `bootany-remove-${Date.now()}.txt`);
   await writeFile(scriptPath, script, "utf-8");
 
   try {

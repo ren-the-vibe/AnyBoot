@@ -58,11 +58,11 @@ export async function createTempMountpoint(prefix: string): Promise<string> {
     // Create temp dir inside WSL filesystem
     const { stdout } = await runCommand("mktemp", [
       "-d",
-      `/tmp/anyboot-${prefix}-XXXXXX`,
+      `/tmp/bootany-${prefix}-XXXXXX`,
     ]);
     return stdout.trim();
   }
-  return mkdtemp(join(tmpdir(), `anyboot-${prefix}-`));
+  return mkdtemp(join(tmpdir(), `bootany-${prefix}-`));
 }
 
 export async function removeMountpoint(mountpoint: string): Promise<void> {

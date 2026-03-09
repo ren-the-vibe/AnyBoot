@@ -19,7 +19,7 @@ export async function formatDrive(devicePath: string): Promise<void> {
   });
 
   // Format Data Partition as NTFS (supports ISO files larger than 4GB)
-  await runCommand("mkfs.ntfs", ["-f", "-L", "ANYBOOT", data], {
+  await runCommand("mkfs.ntfs", ["-f", "-L", "BOOTANY", data], {
     asRoot: true,
   });
 }

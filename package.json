@@ -1,5 +1,5 @@
 {
-  "name": "anyboot",
+  "name": "bootany",
   "version": "0.1.0",
   "description": "A tool to create a multiboot USB drive",
   "main": "dist/main/index.js",
