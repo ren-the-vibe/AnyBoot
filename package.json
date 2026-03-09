@@ -8,7 +8,6 @@
     "build": "tsc && npm run copy-assets",
     "start": "npm run build && electron .",
     "dev": "tsc && npm run copy-assets && electron .",
-    "build-grub": "node scripts/build-grub-binaries.js",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder"
   },
