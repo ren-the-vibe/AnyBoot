@@ -81,6 +81,9 @@ async function refreshDevices(): Promise<void> {
 
   const devices: any[] = Array.isArray(result) ? result : [];
 
+  // Preserve current selection if device is still present after refresh
+  const previousSelection = deviceSelect.value;
+
   // Clear current options (keep placeholder)
   while (deviceSelect.options.length > 1) {
     deviceSelect.remove(1);
@@ -99,8 +102,9 @@ async function refreshDevices(): Promise<void> {
     statusText.textContent = `Found ${devices.length} device(s).`;
   }
 
-  // Reset selection
-  deviceSelect.value = "";
+  // Restore selection if device still exists, otherwise reset
+  const stillExists = devices.some((d) => d.path === previousSelection);
+  deviceSelect.value = stillExists ? previousSelection : "";
   onDeviceSelected();
 }
 
