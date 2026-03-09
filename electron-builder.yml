@@ -8,6 +8,10 @@ files:
 extraResources:
   - from: resources/
     to: resources/
+win:
+  target:
+    - nsis
+  sign: false
 linux:
   target:
     - AppImage
