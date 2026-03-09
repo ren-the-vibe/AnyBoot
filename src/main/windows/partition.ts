@@ -29,19 +29,19 @@ export async function partitionDriveWindows(
 ): Promise<void> {
   const diskNum = getDiskNumber(devicePath);
 
-  // First, take the disk offline and clean it, then set up GPT partitions
+  // "create partition efi" is not supported on removable media (USB drives),
+  // so we use "create partition primary" for all partitions and set GPT
+  // type GUIDs via PowerShell afterward.
   const script = [
     `select disk ${diskNum}`,
     `clean`,
     `convert gpt`,
-    // Create EFI System Partition (200 MB)
-    `create partition efi size=200`,
+    // Partition 1: will become EFI System Partition (200 MB)
+    `create partition primary size=200`,
     `format fs=fat32 label="EFI" quick`,
-    // Create a small partition for BIOS boot (1 MB)
-    // diskpart doesn't support EF02 type, so we create a primary partition
-    // and change its type via PowerShell afterward
+    // Partition 2: will become BIOS Boot Partition (1 MB)
     `create partition primary size=1`,
-    // Create Data Partition (remaining space)
+    // Partition 3: Data partition (remaining space)
     `create partition primary`,
     `format fs=fat32 label="ANYBOOT" quick`,
   ].join("\n");
@@ -51,7 +51,6 @@ export async function partitionDriveWindows(
 
   try {
     await execFileAsync("diskpart", ["/s", scriptPath]);
-    // Only clean up on success so the file can be inspected on failure
     try { await unlink(scriptPath); } catch {}
   } catch (err: any) {
     const detail = err.stderr || err.stdout || err.message || String(err);
@@ -61,8 +60,20 @@ export async function partitionDriveWindows(
     );
   }
 
-  // Set the BIOS boot partition type to EF02 using PowerShell
-  // Partition 2 is the 1MB partition we created
+  // Set partition type GUIDs via PowerShell since diskpart can't on removable media.
+  // Partition 1 → EFI System Partition
+  try {
+    await execFileAsync("powershell", [
+      "-NoProfile",
+      "-Command",
+      `Set-Partition -DiskNumber ${diskNum} -PartitionNumber 1 ` +
+        `-GptType '{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}'`,
+    ]);
+  } catch {
+    console.warn("Could not set EFI partition type. UEFI boot may not work.");
+  }
+
+  // Partition 2 → BIOS Boot Partition (EF02)
   try {
     await execFileAsync("powershell", [
       "-NoProfile",
@@ -71,7 +82,6 @@ export async function partitionDriveWindows(
         `-GptType '{21686148-6449-6E6F-744E-656564454649}'`,
     ]);
   } catch {
-    // If this fails, BIOS boot may not work but UEFI will still be fine
     console.warn("Could not set BIOS boot partition type. UEFI boot will still work.");
   }
 }
