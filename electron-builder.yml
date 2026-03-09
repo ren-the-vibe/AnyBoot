@@ -11,6 +11,7 @@ extraResources:
 win:
   target:
     - nsis
+    - portable
   icon: AnyBoot.png
   forceCodeSigning: false
   signtoolOptions:
