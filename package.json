@@ -9,7 +9,7 @@
     "start": "npm run build && electron .",
     "dev": "tsc && npm run copy-assets && electron .",
     "pack": "npm run build && electron-builder --dir",
-    "dist": "npm run build && node scripts/build-dist.js"
+    "dist": "npm run build && electron-builder"
   },
   "author": "",
   "license": "GPL-3.0",

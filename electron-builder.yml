@@ -13,6 +13,8 @@ win:
     - nsis
   icon: AnyBoot.png
   forceCodeSigning: false
+  signtoolOptions:
+    sign: scripts/sign.js
 linux:
   target:
     - AppImage
