@@ -3,6 +3,7 @@ import { promisify } from "util";
 import { writeFile, unlink } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
+import { assertNotSystemDisk } from "./safety";
 
 const execFileAsync = promisify(execFile);
 
@@ -30,50 +31,53 @@ export interface PartitionLayout {
  */
 export async function getPartitionLayout(
   devicePath: string
-): Promise<PartitionLayout> {
-  const diskNum = getDiskNumber(devicePath);
+): Promise<PartitionLayout | null> {
+  try {
+    const diskNum = getDiskNumber(devicePath);
 
-  const { stdout } = await execFileAsync("powershell", [
-    "-NoProfile",
-    "-Command",
-    `Get-Partition -DiskNumber ${diskNum} | ` +
-      `Select-Object PartitionNumber,Size,Type | ` +
-      `ConvertTo-Json -Compress`,
-  ]);
+    const { stdout } = await execFileAsync("powershell", [
+      "-NoProfile",
+      "-Command",
+      `Get-Partition -DiskNumber ${diskNum} | ` +
+        `Select-Object PartitionNumber,Size,Type | ` +
+        `ConvertTo-Json -Compress`,
+    ]);
 
-  const parsed = JSON.parse(stdout.trim());
-  const parts: Array<{ PartitionNumber: number; Size: number; Type: string }> =
-    Array.isArray(parsed) ? parsed : [parsed];
+    const parsed = JSON.parse(stdout.trim());
+    const parts: Array<{ PartitionNumber: number; Size: number; Type: string }> =
+      Array.isArray(parsed) ? parsed : [parsed];
 
-  // Filter out Microsoft Reserved (MSR) and other system partitions by type
-  const candidates = parts.filter(
-    (p) => p.Type !== "Reserved" && p.Type !== "Unknown"
-  );
-
-  // Sort by partition number to get creation order
-  candidates.sort((a, b) => a.PartitionNumber - b.PartitionNumber);
-
-  // Identify by size: ESP ~200MB, BIOS Boot ~1MB, Data = largest
-  const MB = 1024 * 1024;
-  const espPart = candidates.find(
-    (p) => p.Size >= 150 * MB && p.Size <= 250 * MB
-  );
-  const biosPart = candidates.find((p) => p.Size <= 2 * MB);
-  const dataPart = candidates.find(
-    (p) => p !== espPart && p !== biosPart && p.Size > 250 * MB
-  );
-
-  if (!espPart || !biosPart || !dataPart) {
-    throw new Error(
-      `Could not identify partition layout. Found partitions: ${JSON.stringify(candidates)}`
+    // Filter out Microsoft Reserved (MSR) and other system partitions by type
+    const candidates = parts.filter(
+      (p) => p.Type !== "Reserved" && p.Type !== "Unknown"
     );
-  }
 
-  return {
-    esp: espPart.PartitionNumber,
-    biosBoot: biosPart.PartitionNumber,
-    data: dataPart.PartitionNumber,
-  };
+    // Sort by partition number to get creation order
+    candidates.sort((a, b) => a.PartitionNumber - b.PartitionNumber);
+
+    // Identify by size: ESP ~200MB, BIOS Boot ~1MB, Data = largest
+    const MB = 1024 * 1024;
+    const espPart = candidates.find(
+      (p) => p.Size >= 150 * MB && p.Size <= 250 * MB
+    );
+    const biosPart = candidates.find((p) => p.Size <= 2 * MB);
+    const dataPart = candidates.find(
+      (p) => p !== espPart && p !== biosPart && p.Size > 250 * MB
+    );
+
+    if (!espPart || !biosPart || !dataPart) {
+      return null;
+    }
+
+    return {
+      esp: espPart.PartitionNumber,
+      biosBoot: biosPart.PartitionNumber,
+      data: dataPart.PartitionNumber,
+    };
+  } catch {
+    // PowerShell error (e.g., disk has no partitions, access denied)
+    return null;
+  }
 }
 
 /**
@@ -87,6 +91,9 @@ export async function getPartitionLayout(
 export async function partitionDriveWindows(
   devicePath: string
 ): Promise<void> {
+  // Last-resort safety: never partition a system/boot disk
+  await assertNotSystemDisk(devicePath);
+
   const diskNum = getDiskNumber(devicePath);
 
   // "create partition efi" is not supported on removable media (USB drives),
@@ -120,8 +127,31 @@ export async function partitionDriveWindows(
     );
   }
 
-  // Discover actual partition numbers (may differ if Windows created an MSR)
-  const layout = await getPartitionLayout(devicePath);
+  // Force Windows to rescan the partition table after diskpart
+  try {
+    await execFileAsync("powershell", [
+      "-NoProfile",
+      "-Command",
+      `Update-Disk -Number ${diskNum}`,
+    ]);
+  } catch {
+    // Not fatal — Get-Partition may still work without it
+  }
+
+  // Discover actual partition numbers (may differ if Windows created an MSR).
+  // Retry a few times since Windows may not have updated its cache yet.
+  let layout: PartitionLayout | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    layout = await getPartitionLayout(devicePath);
+    if (layout) break;
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+  if (!layout) {
+    throw new Error(
+      "Partitioning completed but the new partition layout could not be detected. " +
+        "Please try preparing the drive again."
+    );
+  }
 
   // Set partition type GUIDs via PowerShell since diskpart can't on removable media.
   try {

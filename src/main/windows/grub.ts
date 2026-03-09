@@ -45,6 +45,12 @@ export async function installGrubWindows(
 ): Promise<void> {
   const grubDir = getGrubResourcesDir();
   const layout = await getPartitionLayout(devicePath);
+  if (!layout) {
+    throw new Error(
+      "Cannot install GRUB: drive does not have the expected AnyBoot partition layout. " +
+        "Please prepare the drive first."
+    );
+  }
 
   // Assign drive letters to ESP and Data partitions
   onProgress?.("Assigning drive letters...");

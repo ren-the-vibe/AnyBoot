@@ -19,6 +19,7 @@ const loadWindowsDetect = () => import("./windows/detect");
 const loadWindowsPartition = () => import("./windows/partition");
 const loadWindowsGrub = () => import("./windows/grub");
 const loadWindowsIsoManager = () => import("./windows/iso-manager");
+const loadWindowsSafety = () => import("./windows/safety");
 
 const execFileAsync = promisify(execFile);
 
@@ -71,6 +72,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle("prepare-device", async (_event, devicePath: string) => {
     try {
       if (isWindows()) {
+        const safety = await loadWindowsSafety();
+        await safety.assertNotSystemDisk(devicePath);
+
         const partition = await loadWindowsPartition();
         const grub = await loadWindowsGrub();
 
@@ -113,6 +117,9 @@ export function registerIpcHandlers(): void {
     async (_event, isoPath: string, devicePath: string) => {
       try {
         if (isWindows()) {
+          const safety = await loadWindowsSafety();
+          await safety.assertNotSystemDisk(devicePath);
+
           const isoManager = await loadWindowsIsoManager();
           await isoManager.addIsoWindows(isoPath, devicePath, (percent, message) => {
             sendProgress(message, percent);
@@ -134,6 +141,9 @@ export function registerIpcHandlers(): void {
     async (_event, isoName: string, devicePath: string) => {
       try {
         if (isWindows()) {
+          const safety = await loadWindowsSafety();
+          await safety.assertNotSystemDisk(devicePath);
+
           const isoManager = await loadWindowsIsoManager();
           await isoManager.removeIsoWindows(isoName, devicePath);
         } else {

@@ -26,6 +26,9 @@ async function withDataPartition(
   fn: (dataRoot: string) => Promise<void>
 ): Promise<void> {
   const layout = await getPartitionLayout(devicePath);
+  if (!layout) {
+    throw new Error("DRIVE_NOT_PREPARED");
+  }
   let letter = await getPartitionDriveLetter(devicePath, layout.data);
   let assignedByUs = false;
 
@@ -102,32 +105,39 @@ export async function listIsosWindows(
 ): Promise<IsoFile[]> {
   const isoFiles: IsoFile[] = [];
 
-  await withDataPartition(devicePath, async (dataRoot) => {
-    const isoDir = join(dataRoot, "iso");
+  try {
+    await withDataPartition(devicePath, async (dataRoot) => {
+      const isoDir = join(dataRoot, "iso");
 
-    let files: string[];
-    try {
-      files = await readdir(isoDir);
-    } catch {
-      return;
-    }
-
-    for (const file of files) {
-      if (!file.toLowerCase().endsWith(".iso")) continue;
-
+      let files: string[];
       try {
-        const fileStat = await stat(join(isoDir, file));
-        isoFiles.push({
-          name: file,
-          size: fileStat.size,
-          sizeHuman: formatSize(fileStat.size),
-          distroFamily: probeIsoByFilename(file),
-        });
+        files = await readdir(isoDir);
       } catch {
-        continue;
+        return;
       }
+
+      for (const file of files) {
+        if (!file.toLowerCase().endsWith(".iso")) continue;
+
+        try {
+          const fileStat = await stat(join(isoDir, file));
+          isoFiles.push({
+            name: file,
+            size: fileStat.size,
+            sizeHuman: formatSize(fileStat.size),
+            distroFamily: probeIsoByFilename(file),
+          });
+        } catch {
+          continue;
+        }
+      }
+    });
+  } catch (err: any) {
+    if (err.message === "DRIVE_NOT_PREPARED") {
+      return [];
     }
-  });
+    throw err;
+  }
 
   return isoFiles;
 }
