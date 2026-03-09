@@ -47,10 +47,10 @@ export async function getPartitionLayout(
     const parts: Array<{ PartitionNumber: number; Size: number; Type: string }> =
       Array.isArray(parsed) ? parsed : [parsed];
 
-    // Filter out Microsoft Reserved (MSR) and other system partitions by type
-    const candidates = parts.filter(
-      (p) => p.Type !== "Reserved" && p.Type !== "Unknown"
-    );
+    // Filter out Microsoft Reserved (MSR) partitions only.
+    // Note: BIOS Boot Partition (GPT type 21686148-...) is reported as "Unknown"
+    // by Windows, so we must NOT filter "Unknown" here.
+    const candidates = parts.filter((p) => p.Type !== "Reserved");
 
     // Sort by partition number to get creation order
     candidates.sort((a, b) => a.PartitionNumber - b.PartitionNumber);
@@ -125,6 +125,22 @@ export async function partitionDriveWindows(
       `diskpart failed (script: ${scriptPath}):\n${detail}\n\n` +
       `Make sure the application is running as Administrator.`
     );
+  }
+
+  // Remove auto-assigned drive letters to prevent Windows "format this disk" dialogs
+  try {
+    await execFileAsync("powershell", [
+      "-NoProfile",
+      "-Command",
+      `Get-Partition -DiskNumber ${diskNum} | ` +
+        `Where-Object { $_.DriveLetter } | ` +
+        `ForEach-Object { ` +
+        `Remove-PartitionAccessPath -DiskNumber ${diskNum} ` +
+        `-PartitionNumber $_.PartitionNumber ` +
+        `-AccessPath "$($_.DriveLetter):\\" }`,
+    ]);
+  } catch {
+    // Not fatal — drive letters will be reassigned later as needed
   }
 
   // Force Windows to rescan the partition table after diskpart
