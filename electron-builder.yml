@@ -12,7 +12,6 @@ win:
   target:
     - nsis
   icon: AnyBoot.png
-  sign: scripts/sign.js
   forceCodeSigning: false
 linux:
   target:
