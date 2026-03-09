@@ -178,4 +178,17 @@ export async function partitionDriveWindows(
   } catch {
     console.warn("Could not set BIOS boot partition type. UEFI boot will still work.");
   }
+
+  // Prevent Windows from assigning a drive letter to the BIOS boot partition
+  // (which triggers a "format this disk" dialog). Must be done AFTER setting
+  // the GPT type, since Set-Partition -GptType can reset partition attributes.
+  try {
+    await execFileAsync("powershell", [
+      "-NoProfile",
+      "-Command",
+      `Set-Partition -DiskNumber ${diskNum} -PartitionNumber ${layout.biosBoot} -NoDefaultDriveLetter $true`,
+    ]);
+  } catch {
+    // Non-fatal: partition may still work, user might just see a format dialog
+  }
 }

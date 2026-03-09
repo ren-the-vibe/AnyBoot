@@ -180,10 +180,16 @@ async function writeBiosBootPartition(
     throw new Error("Could not determine BIOS boot partition offset");
   }
 
-  // Write core.img to the partition
+  // Write core.img to the partition.
+  // Windows raw device I/O requires writes to be a multiple of the sector size.
+  const sectorSize = 512;
+  const paddedLen = Math.ceil(coreImg.length / sectorSize) * sectorSize;
+  const paddedBuf = Buffer.alloc(paddedLen);
+  coreImg.copy(paddedBuf);
+
   const fd = await open(devicePath, "r+");
   try {
-    await fd.write(coreImg, 0, coreImg.length, offset);
+    await fd.write(paddedBuf, 0, paddedBuf.length, offset);
   } finally {
     await fd.close();
   }
