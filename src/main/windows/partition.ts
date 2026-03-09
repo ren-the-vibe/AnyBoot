@@ -127,22 +127,6 @@ export async function partitionDriveWindows(
     );
   }
 
-  // Remove auto-assigned drive letters to prevent Windows "format this disk" dialogs
-  try {
-    await execFileAsync("powershell", [
-      "-NoProfile",
-      "-Command",
-      `Get-Partition -DiskNumber ${diskNum} | ` +
-        `Where-Object { $_.DriveLetter } | ` +
-        `ForEach-Object { ` +
-        `Remove-PartitionAccessPath -DiskNumber ${diskNum} ` +
-        `-PartitionNumber $_.PartitionNumber ` +
-        `-AccessPath "$($_.DriveLetter):\\" }`,
-    ]);
-  } catch {
-    // Not fatal — drive letters will be reassigned later as needed
-  }
-
   // Force Windows to rescan the partition table after diskpart
   try {
     await execFileAsync("powershell", [

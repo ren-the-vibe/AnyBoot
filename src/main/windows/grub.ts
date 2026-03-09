@@ -124,12 +124,10 @@ export async function installGrubWindows(
 
     onProgress?.("GRUB installation complete.");
   } finally {
-    // Remove drive letters when done
+    // Remove ESP drive letter (users don't need to browse the EFI partition).
+    // Keep the data partition letter so the drive is accessible in Explorer.
     try {
       await removeDriveLetter(devicePath, layout.esp);
-    } catch {}
-    try {
-      await removeDriveLetter(devicePath, layout.data);
     } catch {}
   }
 }
