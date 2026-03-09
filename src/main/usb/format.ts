@@ -18,8 +18,8 @@ export async function formatDrive(devicePath: string): Promise<void> {
     asRoot: true,
   });
 
-  // Format Data Partition as FAT32
-  await runCommand("mkfs.fat", ["-F", "32", "-n", "ANYBOOT", data], {
+  // Format Data Partition as NTFS (supports ISO files larger than 4GB)
+  await runCommand("mkfs.ntfs", ["-f", "-L", "ANYBOOT", data], {
     asRoot: true,
   });
 }

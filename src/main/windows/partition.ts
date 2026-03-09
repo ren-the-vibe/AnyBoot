@@ -82,7 +82,7 @@ export async function getPartitionLayout(
 
 /**
  * Partition a USB drive using diskpart on Windows.
- * Creates: ESP (200MB FAT32), BIOS-compat partition (1MB), Data (remaining FAT32).
+ * Creates: ESP (200MB FAT32), BIOS-compat partition (1MB), Data (remaining NTFS).
  *
  * Note: diskpart on Windows creates MBR-compatible GPT by default.
  * The BIOS Boot Partition (EF02) isn't natively supported by diskpart,
@@ -112,8 +112,9 @@ export async function partitionDriveWindows(
     `create partition primary size=1`,
     `gpt attributes=0x4000000000000000`,
     // Partition 3: Data partition (remaining space)
+    // Use NTFS instead of FAT32 to support ISO files larger than 4GB.
     `create partition primary`,
-    `format fs=fat32 label="ANYBOOT" quick`,
+    `format fs=ntfs label="ANYBOOT" quick`,
   ].join("\n");
 
   const scriptPath = join(tmpdir(), `anyboot-diskpart-${Date.now()}.txt`);

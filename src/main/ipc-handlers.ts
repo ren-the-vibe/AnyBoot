@@ -26,6 +26,7 @@ const execFileAsync = promisify(execFile);
 const LINUX_REQUIRED_TOOLS = [
   "sgdisk",
   "mkfs.fat",
+  "mkfs.ntfs",
   "grub-install",
   "lsblk",
   "mount",
