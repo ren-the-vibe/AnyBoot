@@ -9,7 +9,7 @@ import {
   readFile,
 } from "fs/promises";
 import { join, resolve } from "path";
-import { getDiskNumber } from "./partition";
+import { getDiskNumber, getPartitionLayout } from "./partition";
 import {
   assignDriveLetter,
   removeDriveLetter,
@@ -44,25 +44,26 @@ export async function installGrubWindows(
   onProgress?: (message: string) => void
 ): Promise<void> {
   const grubDir = getGrubResourcesDir();
+  const layout = await getPartitionLayout(devicePath);
 
-  // Assign drive letters to ESP (partition 1) and Data (partition 3)
+  // Assign drive letters to ESP and Data partitions
   onProgress?.("Assigning drive letters...");
 
   let espLetter: string;
   let dataLetter: string;
 
   try {
-    espLetter = await assignDriveLetter(devicePath, 1);
+    espLetter = await assignDriveLetter(devicePath, layout.esp);
   } catch {
     espLetter = await findFreeDriveLetter();
-    await assignDriveLetterForced(devicePath, 1, espLetter);
+    await assignDriveLetterForced(devicePath, layout.esp, espLetter);
   }
 
   try {
-    dataLetter = await assignDriveLetter(devicePath, 3);
+    dataLetter = await assignDriveLetter(devicePath, layout.data);
   } catch {
     dataLetter = await findFreeDriveLetter(espLetter);
-    await assignDriveLetterForced(devicePath, 3, dataLetter);
+    await assignDriveLetterForced(devicePath, layout.data, dataLetter);
   }
 
   const espRoot = `${espLetter}:\\`;
@@ -107,8 +108,8 @@ export async function installGrubWindows(
     // Write boot.img to MBR (first 440 bytes of disk)
     await writeMbr(devicePath, join(biosSrc, "boot.img"));
 
-    // Write core.img to BIOS Boot Partition (partition 2)
-    await writeBiosBootPartition(devicePath, join(biosSrc, "core.img"));
+    // Write core.img to BIOS Boot Partition
+    await writeBiosBootPartition(devicePath, join(biosSrc, "core.img"), layout.biosBoot);
 
     // --- GRUB Configuration ---
     onProgress?.("Installing GRUB configuration...");
@@ -119,10 +120,10 @@ export async function installGrubWindows(
   } finally {
     // Remove drive letters when done
     try {
-      await removeDriveLetter(devicePath, 1);
+      await removeDriveLetter(devicePath, layout.esp);
     } catch {}
     try {
-      await removeDriveLetter(devicePath, 3);
+      await removeDriveLetter(devicePath, layout.data);
     } catch {}
   }
 }
@@ -153,21 +154,21 @@ async function writeMbr(devicePath: string, bootImgPath: string): Promise<void> 
 }
 
 /**
- * Write core.img to the BIOS Boot Partition (partition 2).
+ * Write core.img to the BIOS Boot Partition.
  * Uses PowerShell to find the partition offset and writes directly.
  */
 async function writeBiosBootPartition(
   devicePath: string,
-  coreImgPath: string
+  coreImgPath: string,
+  partitionNumber: number
 ): Promise<void> {
   const diskNum = getDiskNumber(devicePath);
   const coreImg = await readFile(coreImgPath);
 
-  // Get the offset of partition 2
   const { stdout } = await execFileAsync("powershell", [
     "-NoProfile",
     "-Command",
-    `(Get-Partition -DiskNumber ${diskNum} -PartitionNumber 2).Offset`,
+    `(Get-Partition -DiskNumber ${diskNum} -PartitionNumber ${partitionNumber}).Offset`,
   ]);
 
   const offset = parseInt(stdout.trim(), 10);

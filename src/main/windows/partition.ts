@@ -16,6 +16,66 @@ export function getDiskNumber(devicePath: string): number {
   return parseInt(match[1], 10);
 }
 
+export interface PartitionLayout {
+  esp: number;
+  biosBoot: number;
+  data: number;
+}
+
+/**
+ * Query actual partition numbers by size after creation.
+ * Windows may insert a hidden Microsoft Reserved Partition (MSR) on some
+ * drives, shifting all partition numbers. This function identifies our
+ * partitions by their size so we never rely on hardcoded numbers.
+ */
+export async function getPartitionLayout(
+  devicePath: string
+): Promise<PartitionLayout> {
+  const diskNum = getDiskNumber(devicePath);
+
+  const { stdout } = await execFileAsync("powershell", [
+    "-NoProfile",
+    "-Command",
+    `Get-Partition -DiskNumber ${diskNum} | ` +
+      `Select-Object PartitionNumber,Size,Type | ` +
+      `ConvertTo-Json -Compress`,
+  ]);
+
+  const parsed = JSON.parse(stdout.trim());
+  const parts: Array<{ PartitionNumber: number; Size: number; Type: string }> =
+    Array.isArray(parsed) ? parsed : [parsed];
+
+  // Filter out Microsoft Reserved (MSR) and other system partitions by type
+  const candidates = parts.filter(
+    (p) => p.Type !== "Reserved" && p.Type !== "Unknown"
+  );
+
+  // Sort by partition number to get creation order
+  candidates.sort((a, b) => a.PartitionNumber - b.PartitionNumber);
+
+  // Identify by size: ESP ~200MB, BIOS Boot ~1MB, Data = largest
+  const MB = 1024 * 1024;
+  const espPart = candidates.find(
+    (p) => p.Size >= 150 * MB && p.Size <= 250 * MB
+  );
+  const biosPart = candidates.find((p) => p.Size <= 2 * MB);
+  const dataPart = candidates.find(
+    (p) => p !== espPart && p !== biosPart && p.Size > 250 * MB
+  );
+
+  if (!espPart || !biosPart || !dataPart) {
+    throw new Error(
+      `Could not identify partition layout. Found partitions: ${JSON.stringify(candidates)}`
+    );
+  }
+
+  return {
+    esp: espPart.PartitionNumber,
+    biosBoot: biosPart.PartitionNumber,
+    data: dataPart.PartitionNumber,
+  };
+}
+
 /**
  * Partition a USB drive using diskpart on Windows.
  * Creates: ESP (200MB FAT32), BIOS-compat partition (1MB), Data (remaining FAT32).
@@ -60,25 +120,26 @@ export async function partitionDriveWindows(
     );
   }
 
+  // Discover actual partition numbers (may differ if Windows created an MSR)
+  const layout = await getPartitionLayout(devicePath);
+
   // Set partition type GUIDs via PowerShell since diskpart can't on removable media.
-  // Partition 1 → EFI System Partition
   try {
     await execFileAsync("powershell", [
       "-NoProfile",
       "-Command",
-      `Set-Partition -DiskNumber ${diskNum} -PartitionNumber 1 ` +
+      `Set-Partition -DiskNumber ${diskNum} -PartitionNumber ${layout.esp} ` +
         `-GptType '{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}'`,
     ]);
   } catch {
     console.warn("Could not set EFI partition type. UEFI boot may not work.");
   }
 
-  // Partition 2 → BIOS Boot Partition (EF02)
   try {
     await execFileAsync("powershell", [
       "-NoProfile",
       "-Command",
-      `Set-Partition -DiskNumber ${diskNum} -PartitionNumber 2 ` +
+      `Set-Partition -DiskNumber ${diskNum} -PartitionNumber ${layout.biosBoot} ` +
         `-GptType '{21686148-6449-6E6F-744E-656564454649}'`,
     ]);
   } catch {

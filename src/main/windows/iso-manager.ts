@@ -2,7 +2,7 @@ import { copyFile, stat, readdir, unlink } from "fs/promises";
 import { join, basename } from "path";
 import { IsoFile } from "../../shared/types";
 import { probeIsoByFilename } from "../iso/probe";
-import { getDiskNumber } from "./partition";
+import { getPartitionLayout } from "./partition";
 import {
   assignDriveLetter,
   removeDriveLetter,
@@ -18,18 +18,19 @@ function formatSize(bytes: number): string {
 }
 
 /**
- * Get access to the data partition (partition 3) by ensuring it has a drive letter.
+ * Get access to the data partition by ensuring it has a drive letter.
  * Returns the root path (e.g., "E:\") and a cleanup function to remove the letter.
  */
 async function withDataPartition(
   devicePath: string,
   fn: (dataRoot: string) => Promise<void>
 ): Promise<void> {
-  let letter = await getPartitionDriveLetter(devicePath, 3);
+  const layout = await getPartitionLayout(devicePath);
+  let letter = await getPartitionDriveLetter(devicePath, layout.data);
   let assignedByUs = false;
 
   if (!letter) {
-    letter = await assignDriveLetter(devicePath, 3);
+    letter = await assignDriveLetter(devicePath, layout.data);
     assignedByUs = true;
   }
 
@@ -40,7 +41,7 @@ async function withDataPartition(
   } finally {
     if (assignedByUs) {
       try {
-        await removeDriveLetter(devicePath, 3);
+        await removeDriveLetter(devicePath, layout.data);
       } catch {}
     }
   }
