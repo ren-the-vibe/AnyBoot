@@ -11,10 +11,14 @@ extraResources:
 win:
   target:
     - nsis
-  signAndEditExecutable: false
+  icon: AnyBoot.png
+  sign: scripts/sign.js
   forceCodeSigning: false
 linux:
   target:
     - AppImage
     - deb
+  icon: AnyBoot.png
   category: Utility
+mac:
+  icon: AnyBoot.png
