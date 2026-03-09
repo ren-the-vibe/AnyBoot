@@ -108,6 +108,7 @@ export async function partitionDriveWindows(
     `format fs=fat32 label="EFI" quick`,
     // Partition 2: will become BIOS Boot Partition (1 MB)
     `create partition primary size=1`,
+    `format fs=fat32 label="BIOS" quick`,
     // Partition 3: Data partition (remaining space)
     `create partition primary`,
     `format fs=fat32 label="ANYBOOT" quick`,
