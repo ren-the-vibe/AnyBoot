@@ -18,7 +18,7 @@ export async function assertNotSystemDisk(devicePath: string): Promise<void> {
   ]);
 
   const info = JSON.parse(stdout.trim());
-  if (info.IsSystem || info.IsBoot) {
+  if (info.IsSystem === true || info.IsBoot === true) {
     throw new Error(
       `Refusing to operate on disk ${diskNum}: it is marked as a system or boot disk.`
     );

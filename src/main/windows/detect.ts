@@ -41,7 +41,7 @@ export async function listUsbDevicesWindows(): Promise<UsbDevice[]> {
   }
 
   const disks: PSDisk[] = (Array.isArray(parsed) ? parsed : [parsed]).filter(
-    (d) => d && !d.IsSystem && !d.IsBoot
+    (d) => d && d.IsSystem !== true && d.IsBoot !== true
   );
   const devices: UsbDevice[] = [];
 
