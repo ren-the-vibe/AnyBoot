@@ -15,13 +15,10 @@ import { installGrub } from "./grub/install";
 import { addIso, removeIso, listIsos } from "./iso/manager";
 
 // Windows imports (lazy-loaded to avoid errors on Linux)
-const loadWindowsModules = async () => ({
-  detect: await import("./windows/detect"),
-  partition: await import("./windows/partition"),
-  format: await import("./windows/format"),
-  grub: await import("./windows/grub"),
-  isoManager: await import("./windows/iso-manager"),
-});
+const loadWindowsDetect = () => import("./windows/detect");
+const loadWindowsPartition = () => import("./windows/partition");
+const loadWindowsGrub = () => import("./windows/grub");
+const loadWindowsIsoManager = () => import("./windows/iso-manager");
 
 const execFileAsync = promisify(execFile);
 
@@ -60,7 +57,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle("list-devices", async () => {
     try {
       if (isWindows()) {
-        const { detect } = await loadWindowsModules();
+        const detect = await loadWindowsDetect();
         return await detect.listUsbDevicesWindows();
       }
       return await listUsbDevices();
@@ -74,16 +71,17 @@ export function registerIpcHandlers(): void {
   ipcMain.handle("prepare-device", async (_event, devicePath: string) => {
     try {
       if (isWindows()) {
-        const win = await loadWindowsModules();
+        const partition = await loadWindowsPartition();
+        const grub = await loadWindowsGrub();
 
         sendProgress("Partitioning drive...", 10);
-        await win.partition.partitionDriveWindows(devicePath);
+        await partition.partitionDriveWindows(devicePath);
 
         // Formatting is done by diskpart during partitioning
         sendProgress("Formatting complete.", 30);
 
         sendProgress("Installing GRUB2 bootloader...", 50);
-        await win.grub.installGrubWindows(devicePath, (msg) => {
+        await grub.installGrubWindows(devicePath, (msg) => {
           sendProgress(msg, 70);
         });
 
@@ -115,7 +113,7 @@ export function registerIpcHandlers(): void {
     async (_event, isoPath: string, devicePath: string) => {
       try {
         if (isWindows()) {
-          const { isoManager } = await loadWindowsModules();
+          const isoManager = await loadWindowsIsoManager();
           await isoManager.addIsoWindows(isoPath, devicePath, (percent, message) => {
             sendProgress(message, percent);
           });
@@ -136,7 +134,7 @@ export function registerIpcHandlers(): void {
     async (_event, isoName: string, devicePath: string) => {
       try {
         if (isWindows()) {
-          const { isoManager } = await loadWindowsModules();
+          const isoManager = await loadWindowsIsoManager();
           await isoManager.removeIsoWindows(isoName, devicePath);
         } else {
           await removeIso(isoName, devicePath);
@@ -151,7 +149,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle("list-isos", async (_event, devicePath: string) => {
     try {
       if (isWindows()) {
-        const { isoManager } = await loadWindowsModules();
+        const isoManager = await loadWindowsIsoManager();
         return await isoManager.listIsosWindows(devicePath);
       }
       return await listIsos(devicePath);
