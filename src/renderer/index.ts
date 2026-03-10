@@ -1,0 +1,259 @@
+// Type declarations for the bootany API exposed via preload
+interface BootAnyAPI {
+  listDevices: () => Promise<any[]>;
+  prepareDevice: (devicePath: string) => Promise<{ success: boolean; error?: string }>;
+  addIso: (isoPath: string, devicePath: string) => Promise<{ success: boolean; error?: string }>;
+  removeIso: (isoName: string, devicePath: string) => Promise<{ success: boolean; error?: string }>;
+  listIsos: (devicePath: string) => Promise<any[]>;
+  checkDependencies: () => Promise<any[]>;
+  selectIsoFile: () => Promise<string | null>;
+  onProgress: (callback: (event: any, data: any) => void) => () => void;
+}
+
+const api = (window as any).bootany as BootAnyAPI;
+
+// DOM elements
+const deviceSelect = document.getElementById("device-select") as HTMLSelectElement;
+const refreshBtn = document.getElementById("refresh-btn") as HTMLButtonElement;
+const deviceInfo = document.getElementById("device-info") as HTMLDivElement;
+const prepareBtn = document.getElementById("prepare-btn") as HTMLButtonElement;
+const addIsoBtn = document.getElementById("add-iso-btn") as HTMLButtonElement;
+const isoList = document.getElementById("iso-list") as HTMLDivElement;
+const progressContainer = document.getElementById("progress-container") as HTMLDivElement;
+const progressFill = document.getElementById("progress-fill") as HTMLDivElement;
+const progressText = document.getElementById("progress-text") as HTMLParagraphElement;
+const depBanner = document.getElementById("dep-banner") as HTMLDivElement;
+const depMessage = document.getElementById("dep-message") as HTMLSpanElement;
+const statusText = document.getElementById("status-text") as HTMLSpanElement;
+
+let selectedDevice: string = "";
+let isOperationRunning = false;
+
+// Progress listener
+api.onProgress((_event, data) => {
+  showProgress(data.message, data.percent);
+});
+
+// Event listeners
+refreshBtn.addEventListener("click", refreshDevices);
+deviceSelect.addEventListener("change", onDeviceSelected);
+prepareBtn.addEventListener("click", prepareDrive);
+addIsoBtn.addEventListener("click", addIsoFile);
+
+// Initialize
+checkDependencies();
+refreshDevices();
+
+async function checkDependencies(): Promise<void> {
+  const results = await api.checkDependencies();
+  const missing = results.filter((r: any) => !r.available);
+
+  if (missing.length > 0) {
+    const tools = missing.map((r: any) => r.tool).join(", ");
+    depBanner.className = "banner error";
+    depMessage.textContent = `Missing: ${tools}. Install them before using BootAny.`;
+    depBanner.classList.remove("hidden");
+  }
+}
+
+async function refreshDevices(): Promise<void> {
+  statusText.textContent = "Scanning for devices...";
+
+  let result: any;
+  try {
+    result = await api.listDevices();
+  } catch (err: any) {
+    depBanner.className = "banner error";
+    depMessage.textContent = `Error scanning devices: ${err.message || err}`;
+    depBanner.classList.remove("hidden");
+    statusText.textContent = "Device scan failed.";
+    return;
+  }
+
+  // Check if backend returned an error object
+  if (result && result.error) {
+    depBanner.className = "banner error";
+    depMessage.textContent = `Error scanning devices: ${result.error}`;
+    depBanner.classList.remove("hidden");
+    statusText.textContent = "Device scan failed.";
+    return;
+  }
+
+  const devices: any[] = Array.isArray(result) ? result : [];
+
+  // Preserve current selection if device is still present after refresh
+  const previousSelection = deviceSelect.value;
+
+  // Clear current options (keep placeholder)
+  while (deviceSelect.options.length > 1) {
+    deviceSelect.remove(1);
+  }
+
+  for (const dev of devices) {
+    const option = document.createElement("option");
+    option.value = dev.path;
+    option.textContent = `${dev.model} (${dev.size})`;
+    deviceSelect.appendChild(option);
+  }
+
+  if (devices.length === 0) {
+    statusText.textContent = "No devices found.";
+  } else {
+    statusText.textContent = `Found ${devices.length} device(s).`;
+  }
+
+  // Restore selection if device still exists, otherwise reset
+  const stillExists = devices.some((d) => d.path === previousSelection);
+  deviceSelect.value = stillExists ? previousSelection : "";
+  onDeviceSelected();
+}
+
+function onDeviceSelected(): void {
+  selectedDevice = deviceSelect.value;
+  const hasDevice = selectedDevice !== "";
+
+  prepareBtn.disabled = !hasDevice || isOperationRunning;
+  addIsoBtn.disabled = !hasDevice || isOperationRunning;
+
+  if (hasDevice) {
+    deviceInfo.textContent = `Selected: ${selectedDevice}`;
+    deviceInfo.classList.remove("hidden");
+    refreshIsoList();
+  } else {
+    deviceInfo.classList.add("hidden");
+  }
+}
+
+async function prepareDrive(): Promise<void> {
+  if (!selectedDevice) return;
+
+  const confirmed = confirm(
+    `WARNING: This will ERASE ALL DATA on ${selectedDevice}!\n\n` +
+    `The drive will be partitioned and formatted for multiboot use.\n\n` +
+    `Are you sure you want to continue?`
+  );
+
+  if (!confirmed) return;
+
+  setOperationRunning(true);
+  showProgress("Starting drive preparation...", 0);
+
+  const result = await api.prepareDevice(selectedDevice);
+
+  if (result.success) {
+    hideProgress();
+    statusText.textContent = "Drive prepared successfully!";
+    refreshIsoList();
+  } else {
+    hideProgress();
+    statusText.textContent = `Error: ${result.error}`;
+    alert(`Failed to prepare drive:\n${result.error}`);
+  }
+
+  setOperationRunning(false);
+}
+
+async function addIsoFile(): Promise<void> {
+  if (!selectedDevice) return;
+
+  const isoPath = await api.selectIsoFile();
+  if (!isoPath) return;
+
+  setOperationRunning(true);
+  showProgress("Adding ISO...", 0);
+
+  const result = await api.addIso(isoPath, selectedDevice);
+
+  if (result.success) {
+    hideProgress();
+    statusText.textContent = "ISO added successfully!";
+    refreshIsoList();
+  } else {
+    hideProgress();
+    statusText.textContent = `Error: ${result.error}`;
+    alert(`Failed to add ISO:\n${result.error}`);
+  }
+
+  setOperationRunning(false);
+}
+
+async function removeIsoFile(isoName: string): Promise<void> {
+  if (!selectedDevice) return;
+
+  const confirmed = confirm(`Remove ${isoName} from the USB drive?`);
+  if (!confirmed) return;
+
+  setOperationRunning(true);
+  statusText.textContent = `Removing ${isoName}...`;
+
+  const result = await api.removeIso(isoName, selectedDevice);
+
+  if (result.success) {
+    statusText.textContent = `${isoName} removed.`;
+    refreshIsoList();
+  } else {
+    statusText.textContent = `Error: ${result.error}`;
+  }
+
+  setOperationRunning(false);
+}
+
+async function refreshIsoList(): Promise<void> {
+  if (!selectedDevice) return;
+
+  try {
+    const isos = await api.listIsos(selectedDevice);
+
+    if (isos.length === 0) {
+      isoList.innerHTML = '<p class="empty-state">No ISOs on this drive. Click "Add ISO" to add one.</p>';
+      return;
+    }
+
+    isoList.innerHTML = "";
+    for (const iso of isos) {
+      const item = document.createElement("div");
+      item.className = "iso-item";
+
+      const name = document.createElement("span");
+      name.className = "iso-name";
+      name.textContent = iso.name;
+
+      const meta = document.createElement("span");
+      meta.className = "iso-meta";
+      meta.textContent = `${iso.sizeHuman} | ${iso.distroFamily}`;
+
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "danger";
+      removeBtn.textContent = "Remove";
+      removeBtn.addEventListener("click", () => removeIsoFile(iso.name));
+
+      item.appendChild(name);
+      item.appendChild(meta);
+      item.appendChild(removeBtn);
+      isoList.appendChild(item);
+    }
+  } catch {
+    isoList.innerHTML = '<p class="empty-state">Could not read ISOs. Prepare the drive first.</p>';
+  }
+}
+
+function showProgress(message: string, percent: number): void {
+  progressContainer.classList.remove("hidden");
+  progressText.textContent = message;
+  if (percent >= 0) {
+    progressFill.style.width = `${percent}%`;
+  }
+}
+
+function hideProgress(): void {
+  progressContainer.classList.add("hidden");
+  progressFill.style.width = "0%";
+  progressText.textContent = "";
+}
+
+function setOperationRunning(running: boolean): void {
+  isOperationRunning = running;
+  prepareBtn.disabled = running || !selectedDevice;
+  addIsoBtn.disabled = running || !selectedDevice;
+  refreshBtn.disabled = running;
+}

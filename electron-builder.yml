@@ -1,0 +1,26 @@
+appId: com.bootany.app
+productName: BootAny
+directories:
+  output: release
+files:
+  - dist/**/*
+  - resources/**/*
+extraResources:
+  - from: resources/
+    to: resources/
+win:
+  target:
+    - nsis
+    - portable
+  icon: BootAny.png
+  forceCodeSigning: false
+  signtoolOptions:
+    sign: scripts/sign.js
+linux:
+  target:
+    - AppImage
+    - deb
+  icon: BootAny.png
+  category: Utility
+mac:
+  icon: BootAny.png
