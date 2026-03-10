@@ -99,10 +99,19 @@ export async function partitionDriveWindows(
   // "create partition efi" is not supported on removable media (USB drives),
   // so we use "create partition primary" for all partitions and set GPT
   // type GUIDs via PowerShell afterward.
+  //
+  // Disk cleaning and GPT conversion is handled by PowerShell (Clear-Disk +
+  // Initialize-Disk) because diskpart's "convert gpt" refuses to work on
+  // removable media (USB flash drives).  PowerShell has no such limitation.
+  await execFileAsync("powershell", [
+    "-NoProfile",
+    "-Command",
+    `Clear-Disk -Number ${diskNum} -RemoveData -RemoveOEM -Confirm:$false -ErrorAction SilentlyContinue; ` +
+      `Initialize-Disk -Number ${diskNum} -PartitionStyle GPT`,
+  ]);
+
   const script = [
     `select disk ${diskNum}`,
-    `clean`,
-    `convert gpt`,
     // Partition 1: will become EFI System Partition (200 MB)
     `create partition primary size=200`,
     `format fs=fat32 label="EFI" quick`,
