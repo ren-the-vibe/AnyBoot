@@ -15,7 +15,7 @@ import {
   removeDriveLetter,
   getPartitionDriveLetter,
 } from "./format";
-import { getGrubCfgSourcePath, getGrubBootstrapCfgPath } from "../grub/config";
+import { getGrubBootstrapCfgPath, writeGeneratedGrubCfg } from "../grub/config";
 
 const execFileAsync = promisify(execFile);
 
@@ -131,9 +131,9 @@ export async function installGrubWindows(
     await writeBiosBootPartition(devicePath, join(biosSrc, "core.img"), layout.biosBoot);
 
     // --- GRUB Configuration ---
+    // Generate an initial grub.cfg (no ISOs yet — menu rebuilt when ISOs are added)
     onProgress?.("Installing GRUB configuration...");
-    const grubCfgSrc = getGrubCfgSourcePath();
-    await copyFile(grubCfgSrc, join(dataRoot, "boot", "grub", "grub.cfg"));
+    await writeGeneratedGrubCfg(join(dataRoot, "boot", "grub", "grub.cfg"), []);
 
     onProgress?.("GRUB installation complete.");
   } finally {

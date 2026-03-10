@@ -1,4 +1,6 @@
 import { join, resolve } from "path";
+import { writeFile as fsWriteFile, unlink as fsUnlink } from "fs/promises";
+import { tmpdir } from "os";
 import { partitionPath } from "../usb/format";
 import {
   mountPartition,
@@ -6,7 +8,7 @@ import {
   createTempMountpoint,
   removeMountpoint,
 } from "../usb/mount";
-import { getGrubCfgSourcePath, getGrubBootstrapCfgPath } from "./config";
+import { getGrubBootstrapCfgPath, generateGrubCfg } from "./config";
 import { runCommand } from "../utils/command-runner";
 import { isWindows, toWslPath } from "../utils/platform";
 
@@ -135,18 +137,17 @@ export async function installGrub(
       { asRoot: true }
     );
 
-    // Install grub.cfg
+    // Generate initial grub.cfg (no ISOs yet — menu rebuilt when ISOs are added)
     onProgress?.("Installing GRUB configuration...");
-    let grubCfgSource = getGrubCfgSourcePath();
-    // On Windows, translate the source path so WSL can read it
-    if (isWindows()) {
-      grubCfgSource = toWslPath(grubCfgSource);
+    const grubCfgPath = join(dataMount, "boot", "grub", "grub.cfg");
+    const cfg = generateGrubCfg([]);
+    const tmpPath = join(tmpdir(), `bootany-grubcfg-${Date.now()}.cfg`);
+    await fsWriteFile(tmpPath, cfg, "utf-8");
+    try {
+      await runCommand("cp", [tmpPath, grubCfgPath], { asRoot: true });
+    } finally {
+      try { await fsUnlink(tmpPath); } catch {}
     }
-    await runCommand(
-      "cp",
-      [grubCfgSource, join(dataMount, "boot", "grub", "grub.cfg")],
-      { asRoot: true }
-    );
 
     onProgress?.("GRUB installation complete.");
   } finally {

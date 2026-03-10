@@ -4,6 +4,7 @@ import { pipeline } from "stream/promises";
 import { join, basename } from "path";
 import { IsoFile } from "../../shared/types";
 import { probeIsoByFilename } from "../iso/probe";
+import { writeGeneratedGrubCfg } from "../grub/config";
 import { getPartitionLayout } from "./partition";
 import {
   assignDriveLetter,
@@ -81,7 +82,11 @@ export async function addIsoWindows(
     });
 
     await pipeline(src, dest);
-    onProgress?.(100, "Copy complete.");
+    onProgress?.(100, "Copy complete. Updating boot menu...");
+
+    // Regenerate grub.cfg with the updated ISO list
+    const isos = await scanIsos(dataRoot);
+    await writeGeneratedGrubCfg(join(dataRoot, "boot", "grub", "grub.cfg"), isos);
   });
 }
 
@@ -92,40 +97,53 @@ export async function removeIsoWindows(
   await withDataPartition(devicePath, async (dataRoot) => {
     const isoPath = join(dataRoot, "iso", isoName);
     await unlink(isoPath);
+
+    // Regenerate grub.cfg with the updated ISO list
+    const isos = await scanIsos(dataRoot);
+    await writeGeneratedGrubCfg(join(dataRoot, "boot", "grub", "grub.cfg"), isos);
   });
+}
+
+/**
+ * Scan the iso/ directory on a mounted data partition and return IsoFile[].
+ */
+async function scanIsos(dataRoot: string): Promise<IsoFile[]> {
+  const isoDir = join(dataRoot, "iso");
+  const isoFiles: IsoFile[] = [];
+
+  let files: string[];
+  try {
+    files = await readdir(isoDir);
+  } catch {
+    return [];
+  }
+
+  for (const file of files) {
+    if (!file.toLowerCase().endsWith(".iso")) continue;
+    try {
+      const fileStat = await stat(join(isoDir, file));
+      isoFiles.push({
+        name: file,
+        size: fileStat.size,
+        sizeHuman: formatSize(fileStat.size),
+        distroFamily: probeIsoByFilename(file),
+      });
+    } catch {
+      continue;
+    }
+  }
+
+  return isoFiles;
 }
 
 export async function listIsosWindows(
   devicePath: string
 ): Promise<IsoFile[]> {
-  const isoFiles: IsoFile[] = [];
+  let isoFiles: IsoFile[] = [];
 
   try {
     await withDataPartition(devicePath, async (dataRoot) => {
-      const isoDir = join(dataRoot, "iso");
-
-      let files: string[];
-      try {
-        files = await readdir(isoDir);
-      } catch {
-        return;
-      }
-
-      for (const file of files) {
-        if (!file.toLowerCase().endsWith(".iso")) continue;
-
-        try {
-          const fileStat = await stat(join(isoDir, file));
-          isoFiles.push({
-            name: file,
-            size: fileStat.size,
-            sizeHuman: formatSize(fileStat.size),
-            distroFamily: probeIsoByFilename(file),
-          });
-        } catch {
-          continue;
-        }
-      }
+      isoFiles = await scanIsos(dataRoot);
     });
   } catch (err: any) {
     if (err.message === "DRIVE_NOT_PREPARED") {

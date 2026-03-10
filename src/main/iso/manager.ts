@@ -1,5 +1,6 @@
-import { stat, readdir } from "fs/promises";
+import { stat, readdir, writeFile as fsWriteFile, unlink as fsUnlink } from "fs/promises";
 import { join, basename } from "path";
+import { tmpdir } from "os";
 import { partitionPath } from "../usb/format";
 import {
   mountPartition,
@@ -8,6 +9,7 @@ import {
   removeMountpoint,
 } from "../usb/mount";
 import { probeIsoByFilename } from "./probe";
+import { generateGrubCfg } from "../grub/config";
 import { IsoFile } from "../../shared/types";
 import { runCommand, spawnCommand, translatePath } from "../utils/command-runner";
 import { isWindows } from "../utils/platform";
@@ -49,8 +51,11 @@ export async function addIso(
 
       proc.on("close", (code) => {
         if (code === 0) {
-          onProgress?.(100, "Copy complete.");
-          resolve();
+          onProgress?.(100, "Copy complete. Updating boot menu...");
+          // Regenerate grub.cfg after copy
+          regenerateGrubCfg(dataMount)
+            .then(() => resolve())
+            .catch(() => resolve()); // non-fatal if regen fails
         } else {
           reject(new Error(`cp exited with code ${code}`));
         }
@@ -110,6 +115,9 @@ export async function removeIso(
     await mountPartition(dataDevice, dataMount);
     const isoPath = join(dataMount, "iso", isoName);
     await runCommand("rm", ["--", isoPath], { asRoot: true });
+
+    // Regenerate grub.cfg after removal
+    await regenerateGrubCfg(dataMount);
   } finally {
     try {
       await unmountPartition(dataMount);
@@ -174,5 +182,58 @@ export async function listIsos(devicePath: string): Promise<IsoFile[]> {
       await unmountPartition(dataMount);
     } catch {}
     await removeMountpoint(dataMount);
+  }
+}
+
+/**
+ * Scan ISOs on the mounted data partition and regenerate grub.cfg.
+ */
+async function regenerateGrubCfg(dataMount: string): Promise<void> {
+  const isoDir = join(dataMount, "iso");
+  const isoFiles: IsoFile[] = [];
+
+  let files: string[];
+  try {
+    if (isWindows()) {
+      const { stdout } = await runCommand("ls", [isoDir]);
+      files = stdout.trim().split("\n").filter(Boolean);
+    } else {
+      files = await readdir(isoDir);
+    }
+  } catch {
+    files = [];
+  }
+
+  for (const file of files) {
+    if (!file.toLowerCase().endsWith(".iso")) continue;
+    let fileSize = 0;
+    try {
+      if (isWindows()) {
+        const { stdout } = await runCommand("stat", ["-c", "%s", join(isoDir, file)]);
+        fileSize = parseInt(stdout.trim(), 10);
+      } else {
+        const fileStat = await stat(join(isoDir, file));
+        fileSize = fileStat.size;
+      }
+    } catch {
+      continue;
+    }
+    isoFiles.push({
+      name: file,
+      size: fileSize,
+      sizeHuman: formatSize(fileSize),
+      distroFamily: probeIsoByFilename(file),
+    });
+  }
+
+  // Write grub.cfg via temp file + cp (needs root on Linux)
+  const grubCfgPath = join(dataMount, "boot", "grub", "grub.cfg");
+  const cfg = generateGrubCfg(isoFiles);
+  const tmpPath = join(tmpdir(), `bootany-grubcfg-${Date.now()}.cfg`);
+  await fsWriteFile(tmpPath, cfg, "utf-8");
+  try {
+    await runCommand("cp", [tmpPath, grubCfgPath], { asRoot: true });
+  } finally {
+    try { await fsUnlink(tmpPath); } catch {}
   }
 }
