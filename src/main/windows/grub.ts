@@ -108,14 +108,6 @@ export async function installGrubWindows(
     const bootstrapCfg = getGrubBootstrapCfgPath();
     await copyFile(bootstrapCfg, join(espRoot, "EFI", "ubuntu", "grub.cfg"));
 
-    // Copy GRUB modules to ESP so the bootstrap can insmod ntfs before searching
-    // Signed GRUB prefix is /EFI/ubuntu, so insmod looks at /EFI/ubuntu/x86_64-efi/
-    const espModDir = join(espRoot, "EFI", "ubuntu", "x86_64-efi");
-    await mkdir(espModDir, { recursive: true });
-    for (const mod of ["ntfs.mod", "ntfscomp.mod", "part_gpt.mod"]) {
-      await copyFile(join(uefiSrc, mod), join(espModDir, mod));
-    }
-
     // Copy UEFI GRUB modules to data partition
     await copyDirectoryContents(
       uefiSrc,

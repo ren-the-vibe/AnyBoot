@@ -137,18 +137,6 @@ export async function installGrub(
       { asRoot: true }
     );
 
-    // Copy GRUB modules to ESP so the bootstrap can insmod ntfs before searching
-    // Signed GRUB prefix is /EFI/ubuntu, so insmod looks at /EFI/ubuntu/x86_64-efi/
-    const espModDir = join(espMount, "EFI", "ubuntu", "x86_64-efi");
-    await runCommand("mkdir", ["-p", espModDir], { asRoot: true });
-    for (const mod of ["ntfs.mod", "ntfscomp.mod", "part_gpt.mod"]) {
-      await runCommand(
-        "cp",
-        [join(uefiSrc, mod), join(espModDir, mod)],
-        { asRoot: true }
-      );
-    }
-
     // Generate initial grub.cfg (no ISOs yet — menu rebuilt when ISOs are added)
     onProgress?.("Installing GRUB configuration...");
     const grubCfgPath = join(dataMount, "boot", "grub", "grub.cfg");
