@@ -15,7 +15,7 @@ import {
   removeDriveLetter,
   getPartitionDriveLetter,
 } from "./format";
-import { getGrubBootstrapCfgPath, writeGeneratedGrubCfg } from "../grub/config";
+import { writeGeneratedGrubCfg } from "../grub/config";
 
 const execFileAsync = promisify(execFile);
 
@@ -104,10 +104,6 @@ export async function installGrubWindows(
       join(espRoot, "EFI", "BOOT", "mmx64.efi")
     );
 
-    // Redirect config: signed GRUB looks at /EFI/ubuntu/grub.cfg (hardcoded prefix)
-    const bootstrapCfg = getGrubBootstrapCfgPath();
-    await copyFile(bootstrapCfg, join(espRoot, "EFI", "ubuntu", "grub.cfg"));
-
     // Copy UEFI GRUB modules to data partition
     await copyDirectoryContents(
       uefiSrc,
@@ -131,8 +127,12 @@ export async function installGrubWindows(
     await writeBiosBootPartition(devicePath, join(biosSrc, "core.img"), layout.biosBoot);
 
     // --- GRUB Configuration ---
-    // Generate an initial grub.cfg (no ISOs yet — menu rebuilt when ISOs are added)
+    // Generate initial grub.cfg (no ISOs yet — menu rebuilt when ISOs are added).
+    // Written to BOTH the ESP and the data partition:
+    //  - ESP  /EFI/ubuntu/grub.cfg  → loaded by signed GRUB (UEFI / Secure Boot)
+    //  - Data /boot/grub/grub.cfg   → loaded by BIOS GRUB
     onProgress?.("Installing GRUB configuration...");
+    await writeGeneratedGrubCfg(join(espRoot, "EFI", "ubuntu", "grub.cfg"), []);
     await writeGeneratedGrubCfg(join(dataRoot, "boot", "grub", "grub.cfg"), []);
 
     onProgress?.("GRUB installation complete.");

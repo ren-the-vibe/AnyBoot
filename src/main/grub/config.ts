@@ -1,28 +1,5 @@
-import { copyFile, writeFile } from "fs/promises";
-import { join } from "path";
+import { writeFile } from "fs/promises";
 import { IsoFile, DistroFamily } from "../../shared/types";
-
-export function getGrubCfgSourcePath(): string {
-  const isDev = !process.resourcesPath?.includes("app.asar");
-  if (isDev) {
-    return join(__dirname, "..", "..", "..", "resources", "grub", "grub.cfg");
-  }
-  return join(process.resourcesPath, "resources", "grub", "grub.cfg");
-}
-
-export function getGrubBootstrapCfgPath(): string {
-  const isDev = !process.resourcesPath?.includes("app.asar");
-  if (isDev) {
-    return join(__dirname, "..", "..", "..", "resources", "grub", "grub-bootstrap.cfg");
-  }
-  return join(process.resourcesPath, "resources", "grub", "grub-bootstrap.cfg");
-}
-
-export async function installGrubConfig(dataMountpoint: string): Promise<void> {
-  const source = getGrubCfgSourcePath();
-  const target = join(dataMountpoint, "boot", "grub", "grub.cfg");
-  await copyFile(source, target);
-}
 
 /**
  * Generate a grub.cfg with explicit menu entries for each ISO.
@@ -153,9 +130,6 @@ function buildDetectionChain(family: DistroFamily, isoPath: string): string[] {
     `    initrd (loop)/boot/initrd`,
     `fi`,
   ];
-
-  // Map each probe to its test file and commands
-  const probes: { test: string; cmds: string[] }[] = [];
 
   const all: { id: string; test: string; cmds: string[] }[] = [
     { id: "casper", test: "(loop)/casper/vmlinuz", cmds: casper },

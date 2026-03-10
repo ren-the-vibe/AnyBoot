@@ -8,9 +8,8 @@ import {
   createTempMountpoint,
   removeMountpoint,
 } from "../usb/mount";
-import { getGrubBootstrapCfgPath, generateGrubCfg } from "./config";
+import { generateGrubCfg } from "./config";
 import { runCommand } from "../utils/command-runner";
-import { isWindows, toWslPath } from "../utils/platform";
 
 function getGrubResourcesDir(): string {
   const isDev = !process.resourcesPath?.includes("app.asar");
@@ -126,25 +125,32 @@ export async function installGrub(
       { asRoot: true }
     );
 
-    // Redirect config for signed GRUB's hardcoded /EFI/ubuntu prefix
-    let bootstrapCfg = getGrubBootstrapCfgPath();
-    if (isWindows()) {
-      bootstrapCfg = toWslPath(bootstrapCfg);
-    }
-    await runCommand(
-      "cp",
-      [bootstrapCfg, join(efiUbuntuDir, "grub.cfg")],
-      { asRoot: true }
-    );
+    // Remove the stale grub.cfg that grub-install placed in EFI/BOOT/.
+    // It contains a hardcoded UUID from the build machine and can confuse
+    // fallback config loading under Secure Boot.
+    try {
+      await runCommand("rm", ["-f", join(efiBootDir, "grub.cfg")], {
+        asRoot: true,
+      });
+    } catch {}
 
-    // Generate initial grub.cfg (no ISOs yet — menu rebuilt when ISOs are added)
+    // Generate initial grub.cfg (no ISOs yet — menu rebuilt when ISOs are added).
+    // Written to BOTH the ESP and the data partition:
+    //  - ESP  /EFI/ubuntu/grub.cfg  → loaded by signed GRUB (UEFI / Secure Boot)
+    //  - Data /boot/grub/grub.cfg   → loaded by BIOS GRUB
     onProgress?.("Installing GRUB configuration...");
-    const grubCfgPath = join(dataMount, "boot", "grub", "grub.cfg");
     const cfg = generateGrubCfg([]);
     const tmpPath = join(tmpdir(), `bootany-grubcfg-${Date.now()}.cfg`);
     await fsWriteFile(tmpPath, cfg, "utf-8");
     try {
-      await runCommand("cp", [tmpPath, grubCfgPath], { asRoot: true });
+      await runCommand("cp", [tmpPath, join(efiUbuntuDir, "grub.cfg")], {
+        asRoot: true,
+      });
+      await runCommand(
+        "cp",
+        [tmpPath, join(dataMount, "boot", "grub", "grub.cfg")],
+        { asRoot: true }
+      );
     } finally {
       try { await fsUnlink(tmpPath); } catch {}
     }
