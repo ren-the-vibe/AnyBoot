@@ -107,7 +107,7 @@ export async function partitionDriveWindows(
     "-NoProfile",
     "-Command",
     `Clear-Disk -Number ${diskNum} -RemoveData -RemoveOEM -Confirm:$false -ErrorAction SilentlyContinue; ` +
-      `Initialize-Disk -Number ${diskNum} -PartitionStyle GPT`,
+      `if ((Get-Disk -Number ${diskNum}).PartitionStyle -ne 'GPT') { Initialize-Disk -Number ${diskNum} -PartitionStyle GPT }`,
   ]);
 
   const script = [
