@@ -37,8 +37,8 @@ export async function getPartitionDriveLetter(
       `(Get-Partition -DiskNumber ${diskNum} -PartitionNumber ${partitionNumber}).DriveLetter`,
     ]);
 
-    const letter = stdout.trim();
-    if (letter && letter.length === 1) {
+    const letter = stdout.trim().replace(/\0/g, "");
+    if (letter && letter.length === 1 && /^[A-Za-z]$/.test(letter)) {
       return letter;
     }
     return null;
