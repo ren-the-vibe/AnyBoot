@@ -3,6 +3,7 @@ import { promisify } from "util";
 import {
   copyFile,
   mkdir,
+  readFile,
   readdir,
   writeFile,
 } from "fs/promises";
@@ -155,13 +156,12 @@ export async function installGrubWindows(
  * caused by Windows holding volume locks on the physical drive.
  */
 async function writeMbr(devicePath: string, bootImgPath: string): Promise<void> {
-  // PowerShell script that:
-  // 1. Opens the physical drive with ReadWrite sharing (avoids volume lock conflicts)
-  // 2. Reads the current 512-byte MBR to preserve the partition table
-  // 3. Overwrites only the first 440 bytes (boot code) with boot.img
-  // 4. Writes the modified MBR back
+  // Read via Node.js (supports Electron asar archives transparently)
+  const bootImg = await readFile(bootImgPath);
+  const b64 = bootImg.toString("base64");
+
   const ps = `
-    $bootImg = [System.IO.File]::ReadAllBytes('${bootImgPath}')
+    $bootImg = [System.Convert]::FromBase64String('${b64}')
     $stream = [System.IO.FileStream]::new(
       '${devicePath}',
       [System.IO.FileMode]::Open,
@@ -200,13 +200,17 @@ async function writeBiosBootPartition(
   // 1. Finds the byte offset of the BIOS boot partition
   // 2. Opens the physical drive with ReadWrite sharing
   // 3. Writes core.img (sector-aligned) at that offset
+  // Read via Node.js (supports Electron asar archives transparently)
+  const coreImg = await readFile(coreImgPath);
+  const sectorSize = 512;
+  const paddedLen = Math.ceil(coreImg.length / sectorSize) * sectorSize;
+  const paddedBuf = Buffer.alloc(paddedLen);
+  coreImg.copy(paddedBuf);
+  const b64 = paddedBuf.toString("base64");
+
   const ps = `
     $offset = (Get-Partition -DiskNumber ${diskNum} -PartitionNumber ${partitionNumber}).Offset
-    $coreImg = [System.IO.File]::ReadAllBytes('${coreImgPath}')
-    $sectorSize = 512
-    $paddedLen = [Math]::Ceiling($coreImg.Length / $sectorSize) * $sectorSize
-    $padded = New-Object byte[] $paddedLen
-    [System.Array]::Copy($coreImg, $padded, $coreImg.Length)
+    $padded = [System.Convert]::FromBase64String('${b64}')
     $stream = [System.IO.FileStream]::new(
       '${devicePath}',
       [System.IO.FileMode]::Open,
