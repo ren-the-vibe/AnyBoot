@@ -230,32 +230,18 @@ async function regenerateGrubCfg(
     });
   }
 
-  // Write grub.cfg via temp file + cp (needs root on Linux)
+  // Write grub.cfg to the data partition only.  The ESP holds a static
+  // bootstrap config (installed once during drive preparation) that chains
+  // into the data partition's config, so only this copy needs updating.
   const cfg = generateGrubCfg(isoFiles);
   const tmpPath = join(tmpdir(), `bootany-grubcfg-${Date.now()}.cfg`);
   await fsWriteFile(tmpPath, cfg, "utf-8");
   try {
-    // Data partition (BIOS boot)
     await runCommand(
       "cp",
       [tmpPath, join(dataMount, "boot", "grub", "grub.cfg")],
       { asRoot: true }
     );
-
-    // ESP (UEFI / Secure Boot) — signed GRUB loads from /EFI/ubuntu/grub.cfg
-    const espDevice = partitionPath(devicePath, 1);
-    const espMount = await createTempMountpoint("esp");
-    try {
-      await mountPartition(espDevice, espMount);
-      await runCommand(
-        "cp",
-        [tmpPath, join(espMount, "EFI", "ubuntu", "grub.cfg")],
-        { asRoot: true }
-      );
-    } finally {
-      try { await unmountPartition(espMount); } catch {}
-      await removeMountpoint(espMount);
-    }
   } finally {
     try { await fsUnlink(tmpPath); } catch {}
   }
