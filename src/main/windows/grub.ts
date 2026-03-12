@@ -5,9 +5,11 @@ import {
   mkdir,
   readFile,
   readdir,
+  unlink,
   writeFile,
 } from "fs/promises";
 import { join, resolve } from "path";
+import { tmpdir } from "os";
 import { getDiskNumber, getPartitionLayout } from "./partition";
 import {
   assignDriveLetter,
@@ -156,31 +158,37 @@ export async function installGrubWindows(
  * caused by Windows holding volume locks on the physical drive.
  */
 async function writeMbr(devicePath: string, bootImgPath: string): Promise<void> {
-  // Read via Node.js (supports Electron asar archives transparently)
+  // Read via Node.js (handles Electron asar archives transparently),
+  // then write to a real temp file so PowerShell can access it.
   const bootImg = await readFile(bootImgPath);
-  const b64 = bootImg.toString("base64");
+  const tmp = join(tmpdir(), `bootany-boot-${Date.now()}.img`);
+  await writeFile(tmp, bootImg);
 
-  const ps = `
-    $bootImg = [System.Convert]::FromBase64String('${b64}')
-    $stream = [System.IO.FileStream]::new(
-      '${devicePath}',
-      [System.IO.FileMode]::Open,
-      [System.IO.FileAccess]::ReadWrite,
-      [System.IO.FileShare]::ReadWrite
-    )
-    try {
-      $mbr = New-Object byte[] 512
-      [void]$stream.Read($mbr, 0, 512)
-      [System.Array]::Copy($bootImg, 0, $mbr, 0, [Math]::Min($bootImg.Length, 440))
-      $stream.Position = 0
-      $stream.Write($mbr, 0, 512)
-      $stream.Flush()
-    } finally {
-      $stream.Close()
-    }
-  `.trim();
+  try {
+    const ps = `
+      $bootImg = [System.IO.File]::ReadAllBytes('${tmp}')
+      $stream = [System.IO.FileStream]::new(
+        '${devicePath}',
+        [System.IO.FileMode]::Open,
+        [System.IO.FileAccess]::ReadWrite,
+        [System.IO.FileShare]::ReadWrite
+      )
+      try {
+        $mbr = New-Object byte[] 512
+        [void]$stream.Read($mbr, 0, 512)
+        [System.Array]::Copy($bootImg, 0, $mbr, 0, [Math]::Min($bootImg.Length, 440))
+        $stream.Position = 0
+        $stream.Write($mbr, 0, 512)
+        $stream.Flush()
+      } finally {
+        $stream.Close()
+      }
+    `.trim();
 
-  await execFileAsync("powershell", ["-NoProfile", "-Command", ps]);
+    await execFileAsync("powershell", ["-NoProfile", "-Command", ps]);
+  } finally {
+    await unlink(tmp).catch(() => {});
+  }
 }
 
 /**
@@ -196,37 +204,40 @@ async function writeBiosBootPartition(
 ): Promise<void> {
   const diskNum = getDiskNumber(devicePath);
 
-  // PowerShell script that:
-  // 1. Finds the byte offset of the BIOS boot partition
-  // 2. Opens the physical drive with ReadWrite sharing
-  // 3. Writes core.img (sector-aligned) at that offset
-  // Read via Node.js (supports Electron asar archives transparently)
+  // Read via Node.js (handles Electron asar archives transparently),
+  // pad to sector boundary, then write to a real temp file.
   const coreImg = await readFile(coreImgPath);
   const sectorSize = 512;
   const paddedLen = Math.ceil(coreImg.length / sectorSize) * sectorSize;
   const paddedBuf = Buffer.alloc(paddedLen);
   coreImg.copy(paddedBuf);
-  const b64 = paddedBuf.toString("base64");
 
-  const ps = `
-    $offset = (Get-Partition -DiskNumber ${diskNum} -PartitionNumber ${partitionNumber}).Offset
-    $padded = [System.Convert]::FromBase64String('${b64}')
-    $stream = [System.IO.FileStream]::new(
-      '${devicePath}',
-      [System.IO.FileMode]::Open,
-      [System.IO.FileAccess]::ReadWrite,
-      [System.IO.FileShare]::ReadWrite
-    )
-    try {
-      $stream.Position = $offset
-      $stream.Write($padded, 0, $padded.Length)
-      $stream.Flush()
-    } finally {
-      $stream.Close()
-    }
-  `.trim();
+  const tmp = join(tmpdir(), `bootany-core-${Date.now()}.img`);
+  await writeFile(tmp, paddedBuf);
 
-  await execFileAsync("powershell", ["-NoProfile", "-Command", ps]);
+  try {
+    const ps = `
+      $offset = (Get-Partition -DiskNumber ${diskNum} -PartitionNumber ${partitionNumber}).Offset
+      $padded = [System.IO.File]::ReadAllBytes('${tmp}')
+      $stream = [System.IO.FileStream]::new(
+        '${devicePath}',
+        [System.IO.FileMode]::Open,
+        [System.IO.FileAccess]::ReadWrite,
+        [System.IO.FileShare]::ReadWrite
+      )
+      try {
+        $stream.Position = $offset
+        $stream.Write($padded, 0, $padded.Length)
+        $stream.Flush()
+      } finally {
+        $stream.Close()
+      }
+    `.trim();
+
+    await execFileAsync("powershell", ["-NoProfile", "-Command", ps]);
+  } finally {
+    await unlink(tmp).catch(() => {});
+  }
 }
 
 /**
