@@ -22,6 +22,8 @@ export function generateGrubCfg(isos: IsoFile[]): string {
     `    insmod loopback`,
     `    insmod iso9660`,
     `    insmod fat`,
+    `    insmod ntfs`,
+    `    insmod ntfscomp`,
     `    insmod part_gpt`,
     `    insmod part_msdos`,
     `fi`,

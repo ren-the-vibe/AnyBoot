@@ -22,25 +22,11 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-// FAT32 maximum file size: 4 GiB minus 1 byte
-const FAT32_MAX_FILE_SIZE = 4 * 1024 * 1024 * 1024 - 1;
-
 export async function addIso(
   isoPath: string,
   devicePath: string,
   onProgress?: (percent: number, message: string) => void
 ): Promise<void> {
-  // Check file size before starting the copy — FAT32 has a 4 GB limit.
-  const srcStat = await stat(isoPath);
-  const totalBytes = srcStat.size;
-  if (totalBytes > FAT32_MAX_FILE_SIZE) {
-    throw new Error(
-      `ISO file is too large for the FAT32 data partition ` +
-        `(${formatSize(totalBytes)}, max ${formatSize(FAT32_MAX_FILE_SIZE)}). ` +
-        `The data partition uses FAT32 for UEFI Secure Boot compatibility.`
-    );
-  }
-
   const dataDevice = partitionPath(devicePath, 3);
   const dataMount = await createTempMountpoint("data");
 
@@ -48,6 +34,10 @@ export async function addIso(
     await mountPartition(dataDevice, dataMount);
     const isoDir = join(dataMount, "iso");
     const destPath = join(isoDir, basename(isoPath));
+
+    // Get source file size for progress
+    const srcStat = await stat(isoPath);
+    const totalBytes = srcStat.size;
 
     const name = basename(isoPath);
     onProgress?.(0, `Copying ${name}... 0% (0 B / ${formatSize(totalBytes)})`);

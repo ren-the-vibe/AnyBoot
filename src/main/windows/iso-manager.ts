@@ -98,29 +98,18 @@ async function writeGrubCfgToAll(
   }
 }
 
-// FAT32 maximum file size: 4 GiB minus 1 byte
-const FAT32_MAX_FILE_SIZE = 4 * 1024 * 1024 * 1024 - 1;
-
 export async function addIsoWindows(
   isoPath: string,
   devicePath: string,
   onProgress?: (percent: number, message: string) => void
 ): Promise<void> {
-  // Check file size before starting the copy — FAT32 has a 4 GB limit.
-  const srcStat = await stat(isoPath);
-  if (srcStat.size > FAT32_MAX_FILE_SIZE) {
-    throw new Error(
-      `ISO file is too large for the FAT32 data partition ` +
-        `(${formatSize(srcStat.size)}, max ${formatSize(FAT32_MAX_FILE_SIZE)}). ` +
-        `The data partition uses FAT32 for UEFI Secure Boot compatibility.`
-    );
-  }
-
   await withDataPartition(devicePath, async (dataRoot) => {
     const isoDir = join(dataRoot, "iso");
     await mkdir(isoDir, { recursive: true });
     const name = basename(isoPath);
     const destPath = join(isoDir, name);
+
+    const srcStat = await stat(isoPath);
     const totalBytes = srcStat.size;
 
     onProgress?.(0, `Copying ${name}... 0% (0 B / ${formatSize(totalBytes)})`);
