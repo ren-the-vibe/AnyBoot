@@ -161,9 +161,9 @@ async function writeMbr(devicePath: string, bootImgPath: string): Promise<void> 
   // 3. Overwrites only the first 440 bytes (boot code) with boot.img
   // 4. Writes the modified MBR back
   const ps = `
-    $bootImg = [System.IO.File]::ReadAllBytes('${bootImgPath.replace(/\\/g, "\\\\")}')
+    $bootImg = [System.IO.File]::ReadAllBytes('${bootImgPath}')
     $stream = [System.IO.FileStream]::new(
-      '${devicePath.replace(/\\/g, "\\\\")}',
+      '${devicePath}',
       [System.IO.FileMode]::Open,
       [System.IO.FileAccess]::ReadWrite,
       [System.IO.FileShare]::ReadWrite
@@ -202,13 +202,13 @@ async function writeBiosBootPartition(
   // 3. Writes core.img (sector-aligned) at that offset
   const ps = `
     $offset = (Get-Partition -DiskNumber ${diskNum} -PartitionNumber ${partitionNumber}).Offset
-    $coreImg = [System.IO.File]::ReadAllBytes('${coreImgPath.replace(/\\/g, "\\\\")}')
+    $coreImg = [System.IO.File]::ReadAllBytes('${coreImgPath}')
     $sectorSize = 512
     $paddedLen = [Math]::Ceiling($coreImg.Length / $sectorSize) * $sectorSize
     $padded = New-Object byte[] $paddedLen
     [System.Array]::Copy($coreImg, $padded, $coreImg.Length)
     $stream = [System.IO.FileStream]::new(
-      '${devicePath.replace(/\\/g, "\\\\")}',
+      '${devicePath}',
       [System.IO.FileMode]::Open,
       [System.IO.FileAccess]::ReadWrite,
       [System.IO.FileShare]::ReadWrite
