@@ -44,6 +44,7 @@ export async function installGrubWindows(
   onProgress?: (message: string) => void
 ): Promise<void> {
   const grubDir = getGrubResourcesDir();
+  const diskNum = getDiskNumber(devicePath);
   const layout = await getPartitionLayout(devicePath);
   if (!layout) {
     throw new Error(
@@ -52,7 +53,41 @@ export async function installGrubWindows(
     );
   }
 
-  // Assign drive letters to ESP and Data partitions
+  // --- BIOS Installation (raw disk writes) ---
+  // Must happen BEFORE mounting volumes: Windows blocks raw physical drive
+  // writes while any volume on the disk is mounted.
+  onProgress?.("Installing GRUB2 for BIOS...");
+  const biosSrc = join(grubDir, "i386-pc");
+
+  // Offline the disk to release any auto-mounted volumes from partitioning
+  try {
+    await execFileAsync("powershell", [
+      "-NoProfile",
+      "-Command",
+      `Set-Disk -Number ${diskNum} -IsOffline $true`,
+    ]);
+  } catch {
+    // May already be offline or not supported — continue anyway
+  }
+
+  try {
+    // Write boot.img to MBR (first 440 bytes of disk)
+    await writeMbr(devicePath, join(biosSrc, "boot.img"));
+
+    // Write core.img to BIOS Boot Partition
+    await writeBiosBootPartition(devicePath, join(biosSrc, "core.img"), layout.biosBoot);
+  } finally {
+    // Bring the disk back online so volumes can be mounted
+    try {
+      await execFileAsync("powershell", [
+        "-NoProfile",
+        "-Command",
+        `Set-Disk -Number ${diskNum} -IsOffline $false`,
+      ]);
+    } catch {}
+  }
+
+  // --- Mount volumes for file-level operations ---
   onProgress?.("Assigning drive letters...");
 
   let espLetter: string;
@@ -110,21 +145,12 @@ export async function installGrubWindows(
       join(dataRoot, "boot", "grub", "x86_64-efi")
     );
 
-    // --- BIOS Installation ---
-    onProgress?.("Installing GRUB2 for BIOS...");
-    const biosSrc = join(grubDir, "i386-pc");
-
     // Copy BIOS GRUB modules to data partition
+    onProgress?.("Copying BIOS GRUB modules...");
     await copyDirectoryContents(
       biosSrc,
       join(dataRoot, "boot", "grub", "i386-pc")
     );
-
-    // Write boot.img to MBR (first 440 bytes of disk)
-    await writeMbr(devicePath, join(biosSrc, "boot.img"));
-
-    // Write core.img to BIOS Boot Partition
-    await writeBiosBootPartition(devicePath, join(biosSrc, "core.img"), layout.biosBoot);
 
     // --- GRUB Configuration ---
     // Generate initial grub.cfg (no ISOs yet — menu rebuilt when ISOs are added).
