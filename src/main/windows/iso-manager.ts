@@ -54,48 +54,17 @@ async function withDataPartition(
 }
 
 /**
- * Write grub.cfg to both the data partition and the ESP.
- * The ESP copy is loaded by the signed GRUB (UEFI / Secure Boot),
- * while the data copy is loaded by BIOS GRUB.
+ * Write grub.cfg to the data partition.
+ *
+ * The ESP holds a static bootstrap config (installed once during drive
+ * preparation) that chains into the data partition's grub.cfg, so only
+ * the data partition copy needs to be regenerated when ISOs change.
  */
-async function writeGrubCfgToAll(
-  devicePath: string,
+async function writeGrubCfgToData(
   dataRoot: string,
   isos: IsoFile[]
 ): Promise<void> {
-  // Data partition (BIOS boot)
   await writeGeneratedGrubCfg(join(dataRoot, "boot", "grub", "grub.cfg"), isos);
-
-  // ESP (UEFI / Secure Boot) — signed GRUB loads from /EFI/ubuntu/grub.cfg
-  const layout = await getPartitionLayout(devicePath);
-  if (!layout) return;
-
-  let espLetter = await getPartitionDriveLetter(devicePath, layout.esp);
-  let espAssignedByUs = false;
-
-  if (!espLetter) {
-    try {
-      espLetter = await assignDriveLetter(devicePath, layout.esp);
-      espAssignedByUs = true;
-    } catch {
-      // Non-fatal: data partition copy still works for BIOS boot
-      return;
-    }
-  }
-
-  try {
-    const espRoot = `${espLetter}:\\`;
-    await writeGeneratedGrubCfg(
-      join(espRoot, "EFI", "ubuntu", "grub.cfg"),
-      isos
-    );
-  } finally {
-    if (espAssignedByUs) {
-      try {
-        await removeDriveLetter(devicePath, layout.esp);
-      } catch {}
-    }
-  }
 }
 
 export async function addIsoWindows(
@@ -131,7 +100,7 @@ export async function addIsoWindows(
 
     // Regenerate grub.cfg on both data partition and ESP
     const isos = await scanIsos(dataRoot);
-    await writeGrubCfgToAll(devicePath, dataRoot, isos);
+    await writeGrubCfgToData(dataRoot, isos);
   });
 }
 
@@ -145,7 +114,7 @@ export async function removeIsoWindows(
 
     // Regenerate grub.cfg on both data partition and ESP
     const isos = await scanIsos(dataRoot);
-    await writeGrubCfgToAll(devicePath, dataRoot, isos);
+    await writeGrubCfgToData(dataRoot, isos);
   });
 }
 

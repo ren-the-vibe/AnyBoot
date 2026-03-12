@@ -104,13 +104,17 @@ export async function installGrubWindows(
     onProgress?.("Installing GRUB2 for UEFI (Secure Boot)...");
     const uefiSrc = join(grubDir, "x86_64-efi");
 
-    // Secure Boot chain: shim (Microsoft-signed) → signed GRUB → our config
+    // Secure Boot chain: shim (Microsoft-signed) → custom GRUB → our config
+    // The custom grubx64.efi has NTFS support built in so it can read the
+    // NTFS data partition.  On first Secure Boot, shim will launch mmx64.efi
+    // (MOK Manager) to enroll the signing key; subsequent boots proceed
+    // automatically.
     await copyFile(
       join(uefiSrc, "shimx64.efi.signed"),
       join(espRoot, "EFI", "BOOT", "BOOTx64.EFI")
     );
     await copyFile(
-      join(uefiSrc, "grubx64.efi.signed"),
+      join(uefiSrc, "grubx64.efi"),
       join(espRoot, "EFI", "BOOT", "grubx64.efi")
     );
     await copyFile(
@@ -132,12 +136,18 @@ export async function installGrubWindows(
     );
 
     // --- GRUB Configuration ---
-    // Generate initial grub.cfg (no ISOs yet — menu rebuilt when ISOs are added).
-    // Written to BOTH the ESP and the data partition:
-    //  - ESP  /EFI/ubuntu/grub.cfg  → loaded by signed GRUB (UEFI / Secure Boot)
-    //  - Data /boot/grub/grub.cfg   → loaded by BIOS GRUB
     onProgress?.("Installing GRUB configuration...");
-    await writeGeneratedGrubCfg(join(espRoot, "EFI", "ubuntu", "grub.cfg"), []);
+
+    // ESP: bootstrap config that searches for the BOOTANY data partition
+    // and chains into its /boot/grub/grub.cfg.  This file is loaded by
+    // the UEFI GRUB binary (hardcoded prefix /EFI/ubuntu).
+    await copyFile(
+      join(grubDir, "grub-bootstrap.cfg"),
+      join(espRoot, "EFI", "ubuntu", "grub.cfg")
+    );
+
+    // Data partition: full generated config (no ISOs yet — rebuilt when
+    // ISOs are added).  Loaded by both BIOS GRUB and the UEFI bootstrap.
     await writeGeneratedGrubCfg(join(dataRoot, "boot", "grub", "grub.cfg"), []);
 
     onProgress?.("GRUB installation complete.");

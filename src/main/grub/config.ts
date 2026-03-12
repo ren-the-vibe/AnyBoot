@@ -166,8 +166,8 @@ function buildDetectionChain(family: DistroFamily, isoPath: string): string[] {
   result.push(`else`);
   result.push(`    echo "Could not find kernel in \${isofile}"`);
   result.push(`    echo "This ISO may not support loopback booting."`);
-  result.push(`    echo "Press any key to return to menu..."`);
-  result.push(`    read`);
+  result.push(`    echo "Returning to menu in 5 seconds..."`);
+  result.push(`    sleep 5`);
   result.push(`fi`);
 
   return result;

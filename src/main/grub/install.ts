@@ -116,7 +116,7 @@ export async function installGrub(
     );
     await runCommand(
       "cp",
-      [join(uefiSrc, "grubx64.efi.signed"), join(efiBootDir, "grubx64.efi")],
+      [join(uefiSrc, "grubx64.efi"), join(efiBootDir, "grubx64.efi")],
       { asRoot: true }
     );
     await runCommand(
@@ -134,18 +134,20 @@ export async function installGrub(
       });
     } catch {}
 
-    // Generate initial grub.cfg (no ISOs yet — menu rebuilt when ISOs are added).
-    // Written to BOTH the ESP and the data partition:
-    //  - ESP  /EFI/ubuntu/grub.cfg  → loaded by signed GRUB (UEFI / Secure Boot)
-    //  - Data /boot/grub/grub.cfg   → loaded by BIOS GRUB
+    // ESP: static bootstrap config that chains to the data partition.
     onProgress?.("Installing GRUB configuration...");
+    await runCommand(
+      "cp",
+      [join(grubResDir, "grub-bootstrap.cfg"), join(efiUbuntuDir, "grub.cfg")],
+      { asRoot: true }
+    );
+
+    // Data partition: full generated config (no ISOs yet — rebuilt when
+    // ISOs are added).  Loaded by both BIOS GRUB and the UEFI bootstrap.
     const cfg = generateGrubCfg([]);
     const tmpPath = join(tmpdir(), `bootany-grubcfg-${Date.now()}.cfg`);
     await fsWriteFile(tmpPath, cfg, "utf-8");
     try {
-      await runCommand("cp", [tmpPath, join(efiUbuntuDir, "grub.cfg")], {
-        asRoot: true,
-      });
       await runCommand(
         "cp",
         [tmpPath, join(dataMount, "boot", "grub", "grub.cfg")],
