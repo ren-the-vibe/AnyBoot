@@ -52,6 +52,18 @@ export async function installGrubWindows(
     );
   }
 
+  // --- BIOS Installation (raw disk writes) ---
+  // Must happen BEFORE assigning drive letters, because mounted volumes
+  // lock the physical drive and cause EINVAL on raw device open.
+  onProgress?.("Installing GRUB2 for BIOS...");
+  const biosSrc = join(grubDir, "i386-pc");
+
+  // Write boot.img to MBR (first 440 bytes of disk)
+  await writeMbr(devicePath, join(biosSrc, "boot.img"));
+
+  // Write core.img to BIOS Boot Partition
+  await writeBiosBootPartition(devicePath, join(biosSrc, "core.img"), layout.biosBoot);
+
   // Assign drive letters to ESP and Data partitions
   onProgress?.("Assigning drive letters...");
 
@@ -114,21 +126,12 @@ export async function installGrubWindows(
       join(dataRoot, "boot", "grub", "x86_64-efi")
     );
 
-    // --- BIOS Installation ---
-    onProgress?.("Installing GRUB2 for BIOS...");
-    const biosSrc = join(grubDir, "i386-pc");
-
     // Copy BIOS GRUB modules to data partition
+    onProgress?.("Copying BIOS modules...");
     await copyDirectoryContents(
       biosSrc,
       join(dataRoot, "boot", "grub", "i386-pc")
     );
-
-    // Write boot.img to MBR (first 440 bytes of disk)
-    await writeMbr(devicePath, join(biosSrc, "boot.img"));
-
-    // Write core.img to BIOS Boot Partition
-    await writeBiosBootPartition(devicePath, join(biosSrc, "core.img"), layout.biosBoot);
 
     // --- GRUB Configuration ---
     // Generate an initial grub.cfg (no ISOs yet — menu rebuilt when ISOs are added)
