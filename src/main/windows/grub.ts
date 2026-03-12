@@ -105,9 +105,6 @@ export async function installGrubWindows(
     const uefiSrc = join(grubDir, "x86_64-efi");
 
     // Secure Boot chain: shim (Microsoft-signed) → signed GRUB → our config
-    // The signed grubx64 has FAT, ext2, loopback, iso9660, search, etc.
-    // built in.  The data partition must use FAT32 (not NTFS) so the
-    // signed GRUB can read ISOs from it.
     await copyFile(
       join(uefiSrc, "shimx64.efi.signed"),
       join(espRoot, "EFI", "BOOT", "BOOTx64.EFI")
