@@ -54,31 +54,73 @@ async function withDataPartition(
 }
 
 /**
- * Write grub.cfg to the data partition.
- *
- * The ESP holds a static bootstrap config (installed once during drive
- * preparation) that chains into the data partition's grub.cfg, so only
- * the data partition copy needs to be regenerated when ISOs change.
+ * Write grub.cfg to both the data partition and the ESP.
+ * The ESP copy is loaded by the signed GRUB (UEFI / Secure Boot),
+ * while the data copy is loaded by BIOS GRUB.
  */
-async function writeGrubCfgToData(
+async function writeGrubCfgToAll(
+  devicePath: string,
   dataRoot: string,
   isos: IsoFile[]
 ): Promise<void> {
+  // Data partition (BIOS boot)
   await writeGeneratedGrubCfg(join(dataRoot, "boot", "grub", "grub.cfg"), isos);
+
+  // ESP (UEFI / Secure Boot) — signed GRUB loads from /EFI/ubuntu/grub.cfg
+  const layout = await getPartitionLayout(devicePath);
+  if (!layout) return;
+
+  let espLetter = await getPartitionDriveLetter(devicePath, layout.esp);
+  let espAssignedByUs = false;
+
+  if (!espLetter) {
+    try {
+      espLetter = await assignDriveLetter(devicePath, layout.esp);
+      espAssignedByUs = true;
+    } catch {
+      // Non-fatal: data partition copy still works for BIOS boot
+      return;
+    }
+  }
+
+  try {
+    const espRoot = `${espLetter}:\\`;
+    await writeGeneratedGrubCfg(
+      join(espRoot, "EFI", "ubuntu", "grub.cfg"),
+      isos
+    );
+  } finally {
+    if (espAssignedByUs) {
+      try {
+        await removeDriveLetter(devicePath, layout.esp);
+      } catch {}
+    }
+  }
 }
+
+// FAT32 maximum file size: 4 GiB minus 1 byte
+const FAT32_MAX_FILE_SIZE = 4 * 1024 * 1024 * 1024 - 1;
 
 export async function addIsoWindows(
   isoPath: string,
   devicePath: string,
   onProgress?: (percent: number, message: string) => void
 ): Promise<void> {
+  // Check file size before starting the copy — FAT32 has a 4 GB limit.
+  const srcStat = await stat(isoPath);
+  if (srcStat.size > FAT32_MAX_FILE_SIZE) {
+    throw new Error(
+      `ISO file is too large for the FAT32 data partition ` +
+        `(${formatSize(srcStat.size)}, max ${formatSize(FAT32_MAX_FILE_SIZE)}). ` +
+        `The data partition uses FAT32 for UEFI Secure Boot compatibility.`
+    );
+  }
+
   await withDataPartition(devicePath, async (dataRoot) => {
     const isoDir = join(dataRoot, "iso");
     await mkdir(isoDir, { recursive: true });
     const name = basename(isoPath);
     const destPath = join(isoDir, name);
-
-    const srcStat = await stat(isoPath);
     const totalBytes = srcStat.size;
 
     onProgress?.(0, `Copying ${name}... 0% (0 B / ${formatSize(totalBytes)})`);
@@ -100,7 +142,7 @@ export async function addIsoWindows(
 
     // Regenerate grub.cfg on both data partition and ESP
     const isos = await scanIsos(dataRoot);
-    await writeGrubCfgToData(dataRoot, isos);
+    await writeGrubCfgToAll(devicePath, dataRoot, isos);
   });
 }
 
@@ -114,7 +156,7 @@ export async function removeIsoWindows(
 
     // Regenerate grub.cfg on both data partition and ESP
     const isos = await scanIsos(dataRoot);
-    await writeGrubCfgToData(dataRoot, isos);
+    await writeGrubCfgToAll(devicePath, dataRoot, isos);
   });
 }
 

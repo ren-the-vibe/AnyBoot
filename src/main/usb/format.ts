@@ -18,8 +18,10 @@ export async function formatDrive(devicePath: string): Promise<void> {
     asRoot: true,
   });
 
-  // Format Data Partition as NTFS (supports ISO files larger than 4GB)
-  await runCommand("mkfs.ntfs", ["-f", "-L", "BOOTANY", data], {
+  // Format Data Partition as FAT32.  Required for UEFI Secure Boot — the
+  // signed GRUB binary has FAT support built in but not NTFS.
+  // Individual files are limited to 4 GB.
+  await runCommand("mkfs.fat", ["-F", "32", "-n", "BOOTANY", data], {
     asRoot: true,
   });
 }
