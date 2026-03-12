@@ -5,8 +5,6 @@ import {
   mkdir,
   readdir,
   writeFile,
-  open,
-  readFile,
 } from "fs/promises";
 import { join, resolve } from "path";
 import { getDiskNumber, getPartitionLayout } from "./partition";
@@ -53,39 +51,17 @@ export async function installGrubWindows(
     );
   }
 
-  // --- BIOS Installation (raw disk writes) ---
-  // Must happen BEFORE mounting volumes: Windows blocks raw physical drive
-  // writes while any volume on the disk is mounted.
+  // --- BIOS Installation (raw disk writes via PowerShell) ---
+  // Uses PowerShell FileStream with ReadWrite sharing to avoid EIO errors
+  // from Windows volume locks on the physical drive.
   onProgress?.("Installing GRUB2 for BIOS...");
   const biosSrc = join(grubDir, "i386-pc");
 
-  // Offline the disk to release any auto-mounted volumes from partitioning
-  try {
-    await execFileAsync("powershell", [
-      "-NoProfile",
-      "-Command",
-      `Set-Disk -Number ${diskNum} -IsOffline $true`,
-    ]);
-  } catch {
-    // May already be offline or not supported — continue anyway
-  }
+  // Write boot.img to MBR (first 440 bytes of disk)
+  await writeMbr(devicePath, join(biosSrc, "boot.img"));
 
-  try {
-    // Write boot.img to MBR (first 440 bytes of disk)
-    await writeMbr(devicePath, join(biosSrc, "boot.img"));
-
-    // Write core.img to BIOS Boot Partition
-    await writeBiosBootPartition(devicePath, join(biosSrc, "core.img"), layout.biosBoot);
-  } finally {
-    // Bring the disk back online so volumes can be mounted
-    try {
-      await execFileAsync("powershell", [
-        "-NoProfile",
-        "-Command",
-        `Set-Disk -Number ${diskNum} -IsOffline $false`,
-      ]);
-    } catch {}
-  }
+  // Write core.img to BIOS Boot Partition
+  await writeBiosBootPartition(devicePath, join(biosSrc, "core.img"), layout.biosBoot);
 
   // --- Mount volumes for file-level operations ---
   onProgress?.("Assigning drive letters...");
@@ -174,31 +150,44 @@ export async function installGrubWindows(
 /**
  * Write GRUB boot.img to the MBR of the disk (first 440 bytes).
  * Preserves the partition table (bytes 440-511).
+ *
+ * Uses PowerShell FileStream with FileShare.ReadWrite to avoid EIO errors
+ * caused by Windows holding volume locks on the physical drive.
  */
 async function writeMbr(devicePath: string, bootImgPath: string): Promise<void> {
-  const bootImg = await readFile(bootImgPath);
+  // PowerShell script that:
+  // 1. Opens the physical drive with ReadWrite sharing (avoids volume lock conflicts)
+  // 2. Reads the current 512-byte MBR to preserve the partition table
+  // 3. Overwrites only the first 440 bytes (boot code) with boot.img
+  // 4. Writes the modified MBR back
+  const ps = `
+    $bootImg = [System.IO.File]::ReadAllBytes('${bootImgPath.replace(/\\/g, "\\\\")}')
+    $stream = [System.IO.FileStream]::new(
+      '${devicePath.replace(/\\/g, "\\\\")}',
+      [System.IO.FileMode]::Open,
+      [System.IO.FileAccess]::ReadWrite,
+      [System.IO.FileShare]::ReadWrite
+    )
+    try {
+      $mbr = New-Object byte[] 512
+      [void]$stream.Read($mbr, 0, 512)
+      [System.Array]::Copy($bootImg, 0, $mbr, 0, [Math]::Min($bootImg.Length, 440))
+      $stream.Position = 0
+      $stream.Write($mbr, 0, 512)
+      $stream.Flush()
+    } finally {
+      $stream.Close()
+    }
+  `.trim();
 
-  // Only write the boot code portion (first 440 bytes), not the partition table
-  const bootCode = bootImg.subarray(0, 440);
-
-  // Read current MBR to preserve partition table
-  const fd = await open(devicePath, "r+");
-  try {
-    const mbrBuf = Buffer.alloc(512);
-    await fd.read(mbrBuf, 0, 512, 0);
-
-    // Overwrite boot code, keep partition table intact
-    bootCode.copy(mbrBuf, 0);
-
-    await fd.write(mbrBuf, 0, 512, 0);
-  } finally {
-    await fd.close();
-  }
+  await execFileAsync("powershell", ["-NoProfile", "-Command", ps]);
 }
 
 /**
  * Write core.img to the BIOS Boot Partition.
- * Uses PowerShell to find the partition offset and writes directly.
+ *
+ * Uses PowerShell FileStream with FileShare.ReadWrite to avoid EIO errors
+ * caused by Windows holding volume locks on the physical drive.
  */
 async function writeBiosBootPartition(
   devicePath: string,
@@ -206,32 +195,34 @@ async function writeBiosBootPartition(
   partitionNumber: number
 ): Promise<void> {
   const diskNum = getDiskNumber(devicePath);
-  const coreImg = await readFile(coreImgPath);
 
-  const { stdout } = await execFileAsync("powershell", [
-    "-NoProfile",
-    "-Command",
-    `(Get-Partition -DiskNumber ${diskNum} -PartitionNumber ${partitionNumber}).Offset`,
-  ]);
+  // PowerShell script that:
+  // 1. Finds the byte offset of the BIOS boot partition
+  // 2. Opens the physical drive with ReadWrite sharing
+  // 3. Writes core.img (sector-aligned) at that offset
+  const ps = `
+    $offset = (Get-Partition -DiskNumber ${diskNum} -PartitionNumber ${partitionNumber}).Offset
+    $coreImg = [System.IO.File]::ReadAllBytes('${coreImgPath.replace(/\\/g, "\\\\")}')
+    $sectorSize = 512
+    $paddedLen = [Math]::Ceiling($coreImg.Length / $sectorSize) * $sectorSize
+    $padded = New-Object byte[] $paddedLen
+    [System.Array]::Copy($coreImg, $padded, $coreImg.Length)
+    $stream = [System.IO.FileStream]::new(
+      '${devicePath.replace(/\\/g, "\\\\")}',
+      [System.IO.FileMode]::Open,
+      [System.IO.FileAccess]::ReadWrite,
+      [System.IO.FileShare]::ReadWrite
+    )
+    try {
+      $stream.Position = $offset
+      $stream.Write($padded, 0, $padded.Length)
+      $stream.Flush()
+    } finally {
+      $stream.Close()
+    }
+  `.trim();
 
-  const offset = parseInt(stdout.trim(), 10);
-  if (isNaN(offset)) {
-    throw new Error("Could not determine BIOS boot partition offset");
-  }
-
-  // Write core.img to the partition.
-  // Windows raw device I/O requires writes to be a multiple of the sector size.
-  const sectorSize = 512;
-  const paddedLen = Math.ceil(coreImg.length / sectorSize) * sectorSize;
-  const paddedBuf = Buffer.alloc(paddedLen);
-  coreImg.copy(paddedBuf);
-
-  const fd = await open(devicePath, "r+");
-  try {
-    await fd.write(paddedBuf, 0, paddedBuf.length, offset);
-  } finally {
-    await fd.close();
-  }
+  await execFileAsync("powershell", ["-NoProfile", "-Command", ps]);
 }
 
 /**
